@@ -1,8 +1,8 @@
 import React, { useEffect, useState, useRef } from 'react';
-import { MapContainer, TileLayer, Marker, Popup, useMap } from 'react-leaflet';
+import { MapContainer, TileLayer, Marker, Popup, useMap, Polyline } from 'react-leaflet';
 import L from 'leaflet';
 import { driversApi, ordersApi } from '../services/api';
-import { Truck, MapPin, Navigation, Package, User, Clock, X } from 'lucide-react';
+import { Truck, MapPin, Navigation, Package, User, Clock, X, Calendar, Activity, ChevronRight } from 'lucide-react';
 import useSocket from '../hooks/useSocket';
 
 // Corregir iconos de Leaflet
@@ -27,6 +27,9 @@ const MapView = ({ user }) => {
   const [selectedDriver, setSelectedDriver] = useState(null);
   const [mapCenter, setMapCenter] = useState([40.7128, -74.006]);
   const [loading, setLoading] = useState(true);
+  const [routeHistory, setRouteHistory] = useState([]);
+  const [showHistory, setShowHistory] = useState(false);
+  const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0]);
   
   // Custom Hook de Tiempo Real (filtrado por empresa)
   const { on } = useSocket(user?.company?._id || user?.company);
@@ -43,24 +46,22 @@ const MapView = ({ user }) => {
             : d
         )
       );
+
+      // Si el conductor seleccionado está en pantalla, actualizar su historial levemente si está activo el modo historial
+      if (selectedDriver?._id === data.driverId && showHistory) {
+         setRouteHistory(prev => [...prev, [data.location.lat, data.location.lng]]);
+      }
     });
 
-    // Intervalo de sincronización con API (cada 30 segundos)
     const syncInterval = setInterval(fetchInitialData, 30000);
-
-    return () => {
-      clearInterval(syncInterval);
-    };
-  }, [user]);
+    return () => clearInterval(syncInterval);
+  }, [user, selectedDriver, showHistory]);
 
   const fetchInitialData = async () => {
     try {
       const dRes = await driversApi.getAll();
-      // Para cada conductor, podríamos buscar su orden activa si quisiéramos ser ultra precisos,
-      // pero el API ya debería poblar esto si lo configuramos. 
-      // Aquí simularemos el enlace con órdenes para el MVP del mapa.
       const oRes = await ordersApi.getAll();
-      const activeOrders = oRes.data.orders.filter(o => o.status === 'assigned' || o.status === 'in route' || o.status === 'in-transit');
+      const activeOrders = oRes.data.orders.filter(o => ['assigned', 'in-transit'].includes(o.status));
       
       const driversWithOrders = dRes.data.map(d => ({
         ...d,
@@ -68,11 +69,38 @@ const MapView = ({ user }) => {
       }));
 
       setDrivers(driversWithOrders);
-      driversRef.current = driversWithOrders;
     } catch (error) {
       console.error("Error en datos de mapa:", error);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const fetchHistory = async (driverId, date) => {
+    try {
+      const { data } = await driversApi.getHistory(driverId, date);
+      const points = data.path.map(p => [p.lat, p.lng]);
+      setRouteHistory(points);
+    } catch (error) {
+      console.error("Error al cargar historial:", error);
+    }
+  };
+
+  const handleSelectDriver = (driver) => {
+    setSelectedDriver(driver);
+    setMapCenter([driver.location.lat, driver.location.lng]);
+    if (showHistory) {
+      fetchHistory(driver._id, selectedDate);
+    }
+  };
+
+  const toggleHistory = () => {
+    const nextState = !showHistory;
+    setShowHistory(nextState);
+    if (nextState && selectedDriver) {
+      fetchHistory(selectedDriver._id, selectedDate);
+    } else {
+      setRouteHistory([]);
     }
   };
 
@@ -120,10 +148,7 @@ const MapView = ({ user }) => {
               activeDrivers.map(driver => (
                 <button 
                   key={driver._id}
-                  onClick={() => {
-                    setSelectedDriver(driver);
-                    setMapCenter([driver.location.lat, driver.location.lng]);
-                  }}
+                  onClick={() => handleSelectDriver(driver)}
                   className={`w-full p-4 flex items-center gap-4 rounded-2xl transition-all group ${selectedDriver?._id === driver._id ? 'bg-primary-600 text-white shadow-xl shadow-primary-500/30' : 'hover:bg-primary-50'}`}
                 >
                   <div className={`w-12 h-12 rounded-xl flex items-center justify-center font-black border-2 ${selectedDriver?._id === driver._id ? 'bg-white/20 border-white text-white' : 'bg-primary-100 border-primary-50 text-primary-700'}`}>
@@ -132,7 +157,7 @@ const MapView = ({ user }) => {
                   <div className="min-w-0 flex-1 text-left">
                     <p className={`font-black truncate text-sm leading-none ${selectedDriver?._id === driver._id ? 'text-white' : 'text-secondary-900'}`}>{driver.name}</p>
                     <p className={`text-[10px] mt-1 flex items-center gap-1 font-bold tracking-tight ${selectedDriver?._id === driver._id ? 'text-white/70' : 'text-primary-600'}`}>
-                      <Package size={10} /> {driver.activeOrder?.orderNumber || 'ORD-SYNC'}
+                      <Package size={10} /> {driver.activeOrder?.orderNumber || 'SIN ORDEN'}
                     </p>
                   </div>
                   <ChevronRight size={16} className={`transition-transform ${selectedDriver?._id === driver._id ? 'opacity-100 translate-x-1' : 'opacity-0'}`} />
@@ -144,11 +169,49 @@ const MapView = ({ user }) => {
 
         {/* Mapa Principal */}
         <div className="flex-1 bg-white rounded-[2.5rem] border border-secondary-100 shadow-sm overflow-hidden relative group animate-in zoom-in-95 duration-700">
+          {/* Botones Flotantes del Mapa */}
+          <div className="absolute top-6 left-6 z-[1000] flex flex-col gap-2">
+             <button 
+               onClick={toggleHistory}
+               className={`p-4 rounded-2xl shadow-xl flex items-center gap-2 transition-all font-black text-xs uppercase tracking-widest ${showHistory ? 'bg-secondary-900 text-white' : 'bg-white text-secondary-600 hover:bg-slate-50'}`}
+             >
+                <Activity size={18} className={showHistory ? 'animate-pulse text-primary-400' : ''} />
+                {showHistory ? 'Viendo Historial' : 'Modo Historial'}
+             </button>
+             
+             {showHistory && (
+               <div className="bg-white p-3 rounded-2xl shadow-xl flex items-center gap-2 animate-in slide-in-from-left-4">
+                  <Calendar size={18} className="text-primary-600" />
+                  <input 
+                    type="date" 
+                    className="outline-none text-xs font-black uppercase" 
+                    value={selectedDate}
+                    onChange={(e) => {
+                      setSelectedDate(e.target.value);
+                      if (selectedDriver) fetchHistory(selectedDriver._id, e.target.value);
+                    }}
+                  />
+               </div>
+             )}
+          </div>
+
           <MapContainer center={mapCenter} zoom={13} style={{ height: '100%', width: '100%' }}>
             <TileLayer
               url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
               attribution='&copy; Tracky Logistics'
             />
+            
+            {showHistory && routeHistory.length > 0 && (
+              <Polyline 
+                positions={routeHistory}
+                pathOptions={{
+                  color: '#3b82f6',
+                  weight: 5,
+                  opacity: 0.6,
+                  dashArray: '1, 10'
+                }}
+              />
+            )}
             {drivers.map(driver => (
               <Marker 
                 key={driver._id} 
@@ -263,22 +326,5 @@ const MapView = ({ user }) => {
     </div>
   );
 };
-
-// Icono decorativo para botones
-const ChevronRight = ({ size, className }) => (
-  <svg 
-    width={size} 
-    height={size} 
-    viewBox="0 0 24 24" 
-    fill="none" 
-    stroke="currentColor" 
-    strokeWidth="3" 
-    strokeLinecap="round" 
-    strokeLinejoin="round" 
-    className={className}
-  >
-    <path d="M9 18l6-6-6-6" />
-  </svg>
-);
 
 export default MapView;

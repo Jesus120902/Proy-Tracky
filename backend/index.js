@@ -48,17 +48,62 @@ app.use('/api/stats', statsRouter);
 app.use('/api/orders', ordersRouter);
 app.use('/api/drivers', driversRouter);
 app.use('/api/driver', require('./routes/driverPortal'));
+app.use('/api/users', require('./routes/users')); // Nueva ruta para gestión de cuentas
 
 // Error Handling
 app.use(errorHandler);
 
 // Socket.io Logic
+const LocationHistory = require('./models/LocationHistory');
+
 io.on('connection', (socket) => {
   console.log(`🔌 Usuario conectado: ${socket.id}`);
 
   socket.on('join_company', (companyId) => {
     socket.join(companyId);
+    socket.companyId = companyId;
     console.log(`🏢 Socket ${socket.id} unido a empresa: ${companyId}`);
+  });
+
+  socket.on('driver_location_update', async (data) => {
+    // console.log(`📍 Ubicación recibida de Driver ${data.driverId}:`, data.location);
+    if (socket.companyId) {
+      io.to(socket.companyId).emit('driver_location_update', data);
+      
+      // Guardar en historial de forma "limpia"
+      try {
+        const today = new Date().toISOString().split('T')[0];
+        const point = { lat: data.location.lat, lng: data.location.lng, timestamp: new Date() };
+        
+        // Buscamos si ya existe el documento de hoy para este conductor
+        let history = await LocationHistory.findOne({ driver: data.driverId, date: today });
+        
+        if (!history) {
+          await LocationHistory.create({
+            driver: data.driverId,
+            company: socket.companyId,
+            date: today,
+            path: [point]
+          });
+        } else {
+          // Lógica "limpia": Solo añadir si el último punto está a más de ~20 metros 
+          // o si han pasado más de 30 segundos (simplificado)
+          const lastPoint = history.path[history.path.length - 1];
+          const distance = Math.sqrt(
+            Math.pow(point.lat - lastPoint.lat, 2) + 
+            Math.pow(point.lng - lastPoint.lng, 2)
+          );
+          
+          // 0.0002 en lat/lng es aprox 20-25 metros
+          if (distance > 0.0002) {
+            history.path.push(point);
+            await history.save();
+          }
+        }
+      } catch (err) {
+        console.error('Error guardando historial:', err);
+      }
+    }
   });
 
   socket.on('disconnect', () => {

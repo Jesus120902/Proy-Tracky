@@ -54,6 +54,12 @@ router.patch('/orders/:id/status', async (req, res, next) => {
     order.status = status;
     if (status === 'delivered') {
       order.deliveredAt = new Date();
+      if (req.body.evidence) {
+        order.evidence = {
+          ...req.body.evidence,
+          deliveredLocation: location || driver.location
+        };
+      }
       // Liberar conductor
       driver.status = 'available';
     } else if (status === 'in-transit') {

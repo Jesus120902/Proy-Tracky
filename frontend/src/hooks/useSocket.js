@@ -25,6 +25,19 @@ const useSocket = (companyId) => {
     };
   }, [companyId]);
 
+  const lastEmitTime = useRef(0);
+  const THROTTLE_MS = 5000; // Emitir máximo cada 5 segundos
+
+  const emitLocation = (data) => {
+    const now = Date.now();
+    if (now - lastEmitTime.current >= THROTTLE_MS) {
+      if (socketRef.current) {
+        socketRef.current.emit('driver_location_update', data);
+        lastEmitTime.current = now;
+      }
+    }
+  };
+
   const emit = (event, data) => {
     if (socketRef.current) {
       socketRef.current.emit(event, data);
@@ -43,7 +56,7 @@ const useSocket = (companyId) => {
     }
   };
 
-  return { socket: socketRef.current, emit, on, off };
+  return { socket: socketRef.current, emit, emitLocation, on, off };
 };
 
 export default useSocket;

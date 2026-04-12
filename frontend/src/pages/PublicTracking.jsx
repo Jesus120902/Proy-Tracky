@@ -39,7 +39,8 @@ const PublicTracking = () => {
     setLoading(true);
     setError(null);
     try {
-      const { data } = await axios.get(`http://localhost:5000/api/orders/track/${number}`);
+      const BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:5000';
+      const { data } = await axios.get(`${BASE_URL}/api/orders/track/${number}`);
       setOrder(data);
     } catch (err) {
       setError(err.response?.data?.message || 'No se pudo encontrar el pedido');
@@ -49,31 +50,32 @@ const PublicTracking = () => {
     }
   };
 
-  useEffect(() => {
-    if (id) fetchTracking(id);
-  }, [id]);
-
-  // Tiempo Real para el cliente final
-  const { on } = useSocket(order?.company?._id || order?.company);
+  // Custom Hook de Tiempo Real
+  const { on, off } = useSocket(order?.company?._id || order?.company);
 
   useEffect(() => {
-    if (order) {
-      on('driver_location_update', (data) => {
-        if (order.driver && data.driverId === order.driver._id) {
-          setOrder(prev => ({
-            ...prev,
-            driver: { ...prev.driver, location: data.location }
-          }));
-        }
-      });
+    if (!order) return;
 
-      on('order_status_update', (data) => {
-        if (data.orderId === order._id || data.orderNumber === order.orderNumber) {
-          setOrder(prev => ({ ...prev, status: data.status }));
-        }
-      });
-    }
-  }, [order, on]);
+    on('driver_location_update', (data) => {
+      if (order.driver && data.driverId === order.driver._id) {
+        setOrder(prev => ({
+          ...prev,
+          driver: { ...prev.driver, location: data.location }
+        }));
+      }
+    });
+
+    on('order_status_update', (data) => {
+      if (data.orderId === order._id || data.orderNumber === order.orderNumber) {
+        setOrder(prev => ({ ...prev, status: data.status }));
+      }
+    });
+
+    return () => {
+      off('driver_location_update');
+      off('order_status_update');
+    };
+  }, [order, on, off]);
 
   const handleSearch = (e) => {
     e.preventDefault();
@@ -168,7 +170,7 @@ const PublicTracking = () => {
                        </div>
                        <div>
                           <p className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-1">Destino</p>
-                          <p className="font-bold text-slate-700 leading-snug">{order.address}</p>
+                          <p className="font-bold text-slate-700 leading-snug">{order.customer?.address || 'Sin dirección'}</p>
                        </div>
                     </div>
                     <div className="flex gap-4">

@@ -69,6 +69,7 @@ export const driversApi = {
   update: (id, data) => api.put(`/drivers/${id}`, data),
   delete: (id) => api.delete(`/drivers/${id}`),
   updateLocation: (id, location) => api.patch(`/drivers/${id}/location`, location),
+  getHistory: (id, date) => api.get(`/drivers/${id}/history`, { params: { date } }),
 };
 
 export const statsApi = {
@@ -83,6 +84,12 @@ export const companiesApi = {
   delete: (id) => api.delete(`/companies/${id}`),
   getMyCompany: () => api.get('/companies/me'),
   updateMyCompany: (data) => api.put('/companies/me', data),
+};
+
+export const usersApi = {
+  getAll: () => api.get('/users'),
+  create: (data) => api.post('/users', data),
+  delete: (id) => api.delete(`/users/${id}`),
 };
 
 export const driverApi = {

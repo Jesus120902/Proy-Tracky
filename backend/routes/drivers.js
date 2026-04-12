@@ -2,7 +2,8 @@ const express = require('express');
 const router = express.Router();
 const Driver = require('../models/Driver');
 const Order = require('../models/Order');
-const { protect } = require('../middleware/authMiddleware');
+const LocationHistory = require('../models/LocationHistory');
+const { protect, authorize } = require('../middleware/authMiddleware');
 
 // Proteger todas las rutas de conductores
 router.use(protect);
@@ -112,6 +113,29 @@ router.delete('/:id', async (req, res, next) => {
 
     await Driver.deleteOne({ _id: req.params.id });
     res.json({ message: 'Conductor eliminado y recursos liberados' });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// @desc    Get driver location history by date
+// @route   GET /api/drivers/:id/history
+router.get('/:id/history', async (req, res, next) => {
+  try {
+    const { date } = req.query; // format YYYY-MM-DD
+    const queryDate = date || new Date().toISOString().split('T')[0];
+    
+    const history = await LocationHistory.findOne({
+      driver: req.params.id,
+      date: queryDate,
+      company: req.user.company
+    });
+
+    if (!history) {
+      return res.json({ driver: req.params.id, date: queryDate, path: [] });
+    }
+
+    res.json(history);
   } catch (err) {
     next(err);
   }

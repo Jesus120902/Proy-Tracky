@@ -11,6 +11,7 @@ import Companies from './pages/Companies';
 import Reports from './pages/Reports';
 import Settings from './pages/Settings';
 import DriverHome from './pages/DriverHome';
+import UserManagement from './pages/UserManagement';
 
 import { ToastProvider, useToast } from './components/Toast';
 
@@ -63,7 +64,10 @@ const AppContent = () => {
           <Route path="/drivers" element={<Drivers user={userInfo} />} />
           <Route path="/map" element={<MapView user={userInfo} />} />
           {(userInfo.role === 'superadmin' || userInfo.role === 'admin') && (
-            <Route path="/companies" element={<Companies user={userInfo} />} />
+            <>
+              <Route path="/companies" element={<Companies user={userInfo} />} />
+              <Route path="/users" element={<UserManagement user={userInfo} />} />
+            </>
           )}
           <Route path="/reports" element={<Reports user={userInfo} />} />
           <Route path="/settings" element={<Settings user={userInfo} />} />

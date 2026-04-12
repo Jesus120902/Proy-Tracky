@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { 
   LayoutDashboard, 
@@ -13,8 +13,11 @@ import {
   Settings as SettingsIcon,
   HelpCircle,
   ChevronRight,
-  ShieldAlert
+  ShieldAlert,
+  Users
 } from 'lucide-react';
+import useSocket from '../hooks/useSocket';
+import { useToast } from '../components/Toast';
 
 const SidebarItem = ({ icon: Icon, label, path, active, onClick }) => (
   <Link
@@ -89,6 +92,27 @@ const Layout = ({ children, user, onLogout }) => {
   if (user.role === 'superadmin') {
     menuItems.push({ icon: ShieldAlert, label: 'Empresas SaaS', path: '/companies' });
   }
+
+  if (user.role === 'superadmin' || user.role === 'admin') {
+    menuItems.push({ icon: Users, label: 'Cuentas & Staff', path: '/users' });
+  }
+
+  const { on } = useSocket(user.company?._id || user.company);
+  const { addToast } = useToast();
+
+  useEffect(() => {
+    if (!on) return;
+
+    // Escuchar eventos globales para notificaciones
+    on('order_status_update', (data) => {
+      const statusText = data?.status ? data.status.toUpperCase() : 'ACTUALIZADO';
+      addToast(`Pedido ${data?.orderNumber || 'S/N'} cambió a: ${statusText}`, 'info');
+    });
+
+    on('driver_location_update', (data) => {
+      // Opcional: Notificar inicio de ruta
+    });
+  }, [on, addToast]);
 
   // Estilo dinámico basado en branding de la empresa
   const primaryColor = user.company?.branding?.primaryColor || '#3b82f6';

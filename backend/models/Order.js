@@ -35,7 +35,17 @@ const orderSchema = new mongoose.Schema(
     items: { type: String, default: '' },
     notes: { type: String, default: '' },
     estimatedDelivery: { type: Date, default: null },
-    deliveredAt: { type: Date, default: null },
+    assignedAt: Date,
+    deliveredAt: Date,
+    evidence: {
+      signature: String, // Base64
+      photo: String,     // Base64
+      recipientName: String,
+      deliveredLocation: {
+        lat: Number,
+        lng: Number
+      }
+    }
   },
   { timestamps: true }
 );
