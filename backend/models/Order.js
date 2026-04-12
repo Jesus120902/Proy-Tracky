@@ -1,0 +1,43 @@
+const mongoose = require('mongoose');
+
+const orderSchema = new mongoose.Schema(
+  {
+    orderNumber: {
+      type: String,
+      unique: true,
+      default: () => `ORD-${Date.now()}`,
+    },
+    company: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'Company',
+      required: true,
+    },
+    customer: {
+      name: { type: String, required: true },
+      address: { type: String, required: true },
+      phone: { type: String, default: '' },
+    },
+    driver: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'Driver',
+      default: null,
+    },
+    status: {
+      type: String,
+      enum: ['pending', 'assigned', 'in-transit', 'delivered', 'cancelled'],
+      default: 'pending',
+    },
+    priority: {
+      type: String,
+      enum: ['low', 'medium', 'high'],
+      default: 'medium',
+    },
+    items: { type: String, default: '' },
+    notes: { type: String, default: '' },
+    estimatedDelivery: { type: Date, default: null },
+    deliveredAt: { type: Date, default: null },
+  },
+  { timestamps: true }
+);
+
+module.exports = mongoose.model('Order', orderSchema);
