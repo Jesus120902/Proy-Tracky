@@ -61,8 +61,11 @@ const AppContent = () => {
         <Routes>
           <Route path="/" element={<Dashboard user={userInfo} />} />
           <Route path="/orders" element={<Orders user={userInfo} />} />
+          {/* Rutas ocultas para demo del 30%
           <Route path="/drivers" element={<Drivers user={userInfo} />} />
+          */}
           <Route path="/map" element={<MapView user={userInfo} />} />
+          {/* Rutas administrativas (Ocultas para demo)
           {(userInfo.role === 'superadmin' || userInfo.role === 'admin') && (
             <>
               <Route path="/companies" element={<Companies user={userInfo} />} />
@@ -71,6 +74,7 @@ const AppContent = () => {
           )}
           <Route path="/reports" element={<Reports user={userInfo} />} />
           <Route path="/settings" element={<Settings user={userInfo} />} />
+          */}
           <Route path="*" element={<Navigate to="/" />} />
         </Routes>
       </Layout>

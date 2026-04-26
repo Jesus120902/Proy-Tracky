@@ -112,10 +112,23 @@ io.on('connection', (socket) => {
 });
 
 // Database Connection
-mongoose
-  .connect(process.env.MONGO_URI || 'mongodb://localhost:27017/tracky')
-  .then(() => console.log('✅ MongoDB connected'))
-  .catch((err) => console.log('❌ MongoDB error:', err));
+const { seedInMemoryDB } = require('./memory_db');
+
+const connectDB = async () => {
+  const MONGO_URI = process.env.MONGO_URI || 'mongodb://localhost:27017/tracky';
+  
+  try {
+    // Intentar conectar al MongoDB local o URI de .env
+    await mongoose.connect(MONGO_URI, { serverSelectionTimeoutMS: 2000 });
+    console.log('✅ MongoDB connected');
+  } catch (err) {
+    console.log('⚠️ No se detectó MongoDB local. Iniciando base de datos volátil para la Demo...');
+    // Si falla, iniciar servidor en memoria
+    await seedInMemoryDB();
+  }
+};
+
+connectDB();
 
 const PORT = process.env.PORT || 5000;
 server.listen(PORT, () => console.log(`🚀 Tracky API & Real-time running on http://localhost:${PORT}`));

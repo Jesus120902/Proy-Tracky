@@ -80,11 +80,15 @@ const Layout = ({ children, user, onLogout }) => {
   const menuItems = [
     { icon: LayoutDashboard, label: 'Dashboard', path: '/' },
     { icon: Package, label: 'Órdenes', path: '/orders' },
+    /* Funcionalidades ocultas para el hito del 30%
     { icon: Truck, label: 'Flota en Ruta', path: '/drivers' },
-    { icon: MapIcon, label: 'Control Live', path: '/map' },
     { icon: BarChart3, label: 'Analítica', path: '/reports' },
+    */
+    { icon: MapIcon, label: 'Control Live', path: '/map' },
   ];
 
+  /* 
+  // Configuración y Administración (Oculto para demo 30%)
   if (user.role === 'admin') {
     menuItems.push({ icon: SettingsIcon, label: 'Configuración', path: '/settings' });
   }
@@ -96,6 +100,7 @@ const Layout = ({ children, user, onLogout }) => {
   if (user.role === 'superadmin' || user.role === 'admin') {
     menuItems.push({ icon: Users, label: 'Cuentas & Staff', path: '/users' });
   }
+  */
 
   const { on } = useSocket(user.company?._id || user.company);
   const { addToast } = useToast();
