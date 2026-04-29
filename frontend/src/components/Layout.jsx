@@ -1,12 +1,12 @@
 import React, { useState, useEffect } from 'react';
 import { Link, useLocation } from 'react-router-dom';
-import { 
-  LayoutDashboard, 
-  Package, 
-  Truck, 
-  Map as MapIcon, 
-  BarChart3, 
-  Menu, 
+import {
+  LayoutDashboard,
+  Package,
+  Truck,
+  Map as MapIcon,
+  BarChart3,
+  Menu,
   LogOut,
   Bell,
   Search,
@@ -23,11 +23,10 @@ const SidebarItem = ({ icon: Icon, label, path, active, onClick }) => (
   <Link
     to={path}
     onClick={onClick}
-    className={`flex items-center justify-between group px-4 py-3 rounded-xl transition-all duration-300 ${
-      active 
-        ? 'bg-primary-600 text-white shadow-lg shadow-primary-900/40 ring-1 ring-white/10' 
+    className={`flex items-center justify-between group px-4 py-3 rounded-xl transition-all duration-300 ${active
+        ? 'bg-primary-600 text-white shadow-lg shadow-primary-900/40 ring-1 ring-white/10'
         : 'text-slate-400 hover:bg-white/5 hover:text-white'
-    }`}
+      }`}
   >
     <div className="flex items-center gap-3">
       <Icon size={20} className={`${active ? 'text-white' : 'text-slate-500 group-hover:text-primary-400'} transition-colors`} />
@@ -40,7 +39,7 @@ const SidebarItem = ({ icon: Icon, label, path, active, onClick }) => (
 const Navbar = ({ toggleSidebar, user }) => (
   <header className="h-16 border-b border-secondary-200 bg-white/80 backdrop-blur-xl sticky top-0 z-30 px-6 flex items-center justify-between shadow-sm">
     <div className="flex items-center gap-4">
-      <button 
+      <button
         onClick={toggleSidebar}
         className="p-2 hover:bg-secondary-100 rounded-lg lg:hidden transition-colors"
       >
@@ -48,14 +47,14 @@ const Navbar = ({ toggleSidebar, user }) => (
       </button>
       <div className="relative hidden md:block group">
         <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-secondary-400 group-focus-within:text-primary-500 transition-colors" size={18} />
-        <input 
-          type="text" 
-          placeholder="Buscar en la organización..." 
+        <input
+          type="text"
+          placeholder="Buscar en la organización..."
           className="pl-10 pr-4 py-2 bg-secondary-50 border border-transparent rounded-xl w-64 focus:bg-white focus:border-primary-100 focus:ring-4 focus:ring-primary-500/10 transition-all outline-none text-sm"
         />
       </div>
     </div>
-    
+
     <div className="flex items-center gap-3">
       <div className="flex items-center gap-3 pl-2 group">
         <div className="text-right hidden sm:block">
@@ -129,11 +128,11 @@ const Layout = ({ children, user, onLogout }) => {
         <div className="h-full flex flex-col p-6">
           <div className="flex items-center gap-3 px-2 mb-10">
             <div className="w-12 h-12 bg-primary-600 rounded-2xl flex items-center justify-center text-white shadow-2xl shadow-primary-500/20 ring-1 ring-white/10 overflow-hidden">
-               {user.company?.logoUrl ? (
-                 <img src={user.company.logoUrl} alt="Logo" className="w-full h-full object-cover" />
-               ) : (
-                 <Truck size={28} />
-               )}
+              {user.company?.logoUrl ? (
+                <img src={user.company.logoUrl} alt="Logo" className="w-full h-full object-cover" />
+              ) : (
+                <Truck size={28} />
+              )}
             </div>
             <div>
               <h1 className="text-xl font-black text-white tracking-tighter truncate max-w-[160px]">
@@ -146,9 +145,9 @@ const Layout = ({ children, user, onLogout }) => {
           <div className="flex-1 space-y-1.5 overflow-y-auto pr-2 custom-scrollbar">
             <p className="px-4 text-[10px] uppercase tracking-widest text-slate-600 font-black mb-4">Operaciones</p>
             {menuItems.map((item) => (
-              <SidebarItem 
-                key={item.path} 
-                {...item} 
+              <SidebarItem
+                key={item.path}
+                {...item}
                 active={location.pathname === item.path}
                 onClick={() => setIsSidebarOpen(false)}
               />
@@ -169,7 +168,7 @@ const Layout = ({ children, user, onLogout }) => {
               </div>
             </div>
 
-            <button 
+            <button
               onClick={onLogout}
               className="flex items-center gap-3 px-4 py-3 text-red-400 hover:bg-red-400/10 rounded-xl w-full transition-all group"
             >
@@ -192,7 +191,7 @@ const Layout = ({ children, user, onLogout }) => {
 
       {/* Overlay for mobile sidebar */}
       {isSidebarOpen && (
-        <div 
+        <div
           className="fixed inset-0 z-30 bg-secondary-950/40 backdrop-blur-md lg:hidden"
           onClick={() => setIsSidebarOpen(false)}
         />
