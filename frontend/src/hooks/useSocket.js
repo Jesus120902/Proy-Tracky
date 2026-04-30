@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useCallback } from 'react';
 import { io } from 'socket.io-client';
 
 const SOCKET_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:5000';
@@ -38,23 +38,25 @@ const useSocket = (companyId) => {
     }
   };
 
-  const emit = (event, data) => {
+  const emit = useCallback((event, data) => {
     if (socketRef.current) {
       socketRef.current.emit(event, data);
     }
-  };
+  }, []);
 
-  const on = (event, callback) => {
+  const on = useCallback((event, callback) => {
     if (socketRef.current) {
+      // Quitar listener previo del mismo evento antes de agregar uno nuevo
+      socketRef.current.off(event);
       socketRef.current.on(event, callback);
     }
-  };
+  }, []);
 
-  const off = (event) => {
+  const off = useCallback((event) => {
     if (socketRef.current) {
       socketRef.current.off(event);
     }
-  };
+  }, []);
 
   return { socket: socketRef.current, emit, emitLocation, on, off };
 };

@@ -101,11 +101,11 @@ const Layout = ({ children, user, onLogout }) => {
   }
   */
 
-  const { on } = useSocket(user.company?._id || user.company);
+  const { on, off } = useSocket(user.company?._id || user.company);
   const { addToast } = useToast();
 
   useEffect(() => {
-    if (!on) return;
+    if (!on || !off) return;
 
     // Escuchar eventos globales para notificaciones
     on('order_status_update', (data) => {
@@ -116,7 +116,13 @@ const Layout = ({ children, user, onLogout }) => {
     on('driver_location_update', (data) => {
       // Opcional: Notificar inicio de ruta
     });
-  }, [on, addToast]);
+
+    // Limpiar listeners al desmontar o si cambia `on`
+    return () => {
+      off('order_status_update');
+      off('driver_location_update');
+    };
+  }, [on, off]);
 
   // Estilo dinámico basado en branding de la empresa
   const primaryColor = user.company?.branding?.primaryColor || '#3b82f6';

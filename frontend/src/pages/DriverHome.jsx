@@ -286,7 +286,92 @@ const DriverHome = ({ user, onLogout }) => {
         )}
       </main>
 
-      <footer className="p-6 bg-white border-t border-slate-100 flex items-center justify-around">
+      {/* MODAL: PRUEBA DE ENTREGA (POD) */}
+      {isPodModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-secondary-950/40 backdrop-blur-sm animate-in fade-in" onClick={() => !isCapturing && setIsPodModalOpen(false)}></div>
+          <div className="bg-white w-full max-w-sm rounded-[2.5rem] shadow-2xl relative z-10 overflow-hidden animate-in zoom-in-95 flex flex-col max-h-[90vh]">
+             <div className="p-6 pb-4 flex justify-between items-center border-b border-slate-100">
+                <h2 className="text-xl font-black text-secondary-900 tracking-tight">Prueba de Entrega</h2>
+                <button onClick={() => setIsPodModalOpen(false)} disabled={isCapturing} className="p-2 hover:bg-slate-50 rounded-xl transition-all">
+                  <X size={20} className="text-slate-400" />
+                </button>
+             </div>
+             
+             <div className="p-6 overflow-y-auto space-y-6 flex-1">
+                {/* 1. Foto de Evidencia */}
+                <div className="space-y-3">
+                   <label className="text-[10px] font-black uppercase tracking-widest text-slate-400">1. Foto del Paquete</label>
+                   {podEvidence.photo ? (
+                     <div className="relative group rounded-3xl overflow-hidden border border-slate-200">
+                        <img src={podEvidence.photo} alt="Evidencia" className="w-full h-32 object-cover" />
+                        <button 
+                          onClick={() => setPodEvidence({...podEvidence, photo: ''})}
+                          className="absolute top-2 right-2 bg-white/80 backdrop-blur-md p-2 rounded-full shadow-lg text-red-500"
+                        >
+                          <X size={16} />
+                        </button>
+                     </div>
+                   ) : (
+                     <label className="border-2 border-dashed border-slate-200 bg-slate-50 rounded-3xl p-6 flex flex-col items-center justify-center cursor-pointer hover:bg-slate-100 transition-colors h-32">
+                        <Camera size={24} className="text-primary-400 mb-2" />
+                        <span className="text-xs font-bold text-slate-500">Tomar Fotografía</span>
+                        <input 
+                          type="file" 
+                          accept="image/*" 
+                          capture="environment"
+                          className="hidden"
+                          onChange={handlePhotoCapture}
+                        />
+                     </label>
+                   )}
+                </div>
+
+                {/* 2. Firma */}
+                <div className="space-y-3">
+                   <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 flex justify-between items-end">
+                      <span>2. Firma del Cliente *</span>
+                   </label>
+                   <div className="bg-slate-50 border border-slate-200 rounded-3xl overflow-hidden h-40">
+                      <SignaturePad 
+                        onSave={(signatureUrl) => setPodEvidence({...podEvidence, signature: signatureUrl})} 
+                        onClear={() => setPodEvidence({...podEvidence, signature: ''})}
+                      />
+                   </div>
+                </div>
+
+                {/* 3. Nombre del Receptor */}
+                <div className="space-y-3">
+                   <label className="text-[10px] font-black uppercase tracking-widest text-slate-400">3. Nombre de quien recibe *</label>
+                   <div className="relative">
+                      <User className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
+                      <input 
+                        required
+                        type="text" 
+                        placeholder="Ej. Juan Pérez"
+                        className="w-full bg-slate-50 border border-slate-200 rounded-2xl pl-12 pr-4 py-4 text-sm font-bold text-slate-800 focus:ring-4 focus:ring-primary-500/10 focus:border-primary-500 outline-none transition-all"
+                        value={podEvidence.recipientName}
+                        onChange={(e) => setPodEvidence({...podEvidence, recipientName: e.target.value})}
+                      />
+                   </div>
+                </div>
+             </div>
+
+             <div className="p-6 bg-white border-t border-slate-100">
+                <button 
+                  onClick={handlePodSubmit}
+                  disabled={isCapturing || !podEvidence.signature || !podEvidence.recipientName}
+                  className="w-full bg-green-500 hover:bg-green-600 disabled:bg-slate-200 disabled:text-slate-400 text-white font-black py-4 rounded-2xl shadow-xl shadow-green-500/20 transition-all uppercase tracking-widest flex items-center justify-center gap-2"
+                >
+                  {isCapturing ? <Loader2 size={18} className="animate-spin" /> : <CheckCircle2 size={18} />}
+                  {isCapturing ? 'Procesando...' : 'FINALIZAR ENTREGA'}
+                </button>
+             </div>
+          </div>
+        </div>
+      )}
+
+      <footer className="p-6 bg-white border-t border-slate-100 flex items-center justify-around z-0 relative">
           <button className="flex flex-col items-center gap-1 text-primary-600">
              <Package size={24} />
              <span className="text-[8px] font-black uppercase tracking-widest">Mis Rutas</span>
