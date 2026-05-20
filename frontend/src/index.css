@@ -57,3 +57,12 @@
     transform: translateY(0);
   }
 }
+
+/* ── Print PDF Optimization ── */
+@media print {
+  @page { margin: 10mm; size: auto; }
+  body { background-color: white !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  aside, header, #export-pdf-button, .animate-spin { display: none !important; }
+  main { padding: 0 !important; margin: 0 !important; max-width: 100% !important; overflow: visible !important; }
+  .grid { page-break-inside: avoid; }
+}

@@ -40,14 +40,22 @@ router.get('/track/:orderNumber', async (req, res, next) => {
 // Aplicar el middleware de protección a TODAS las rutas administrativas siguientes
 router.use(protect);
 
-// GET all orders (filtrado por empresa)
+// GET all orders (filtrado por empresa, paginado y con búsqueda)
 router.get('/', async (req, res, next) => {
   try {
-    const { status, page = 1, limit = 50 } = req.query;
+    const { status, search, page = 1, limit = 10 } = req.query;
     
     // Filtro base: si es superadmin ve todo, si no, solo su empresa
     const filter = req.user.role === 'superadmin' ? {} : { company: req.user.company };
-    if (status) filter.status = status;
+    
+    if (status && status !== 'all') filter.status = status;
+    
+    if (search) {
+      filter.$or = [
+        { orderNumber: { $regex: search, $options: 'i' } },
+        { 'customer.name': { $regex: search, $options: 'i' } }
+      ];
+    }
 
     const orders = await Order.find(filter)
       .populate('driver', 'name status vehicle phone')
@@ -56,7 +64,9 @@ router.get('/', async (req, res, next) => {
       .limit(Number(limit));
 
     const total = await Order.countDocuments(filter);
-    res.json({ orders, total, page: Number(page) });
+    const totalPages = Math.ceil(total / limit);
+
+    res.json({ orders, total, page: Number(page), totalPages, limit: Number(limit) });
   } catch (err) {
     next(err);
   }

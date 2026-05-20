@@ -30,18 +30,29 @@ const Orders = () => {
     status: 'pending'
   });
 
+  // Paginación y Filtrado backend
+  const [page, setPage] = useState(1);
+  const [totalPages, setTotalPages] = useState(1);
+  const [totalOrders, setTotalOrders] = useState(0);
+
   useEffect(() => {
-    fetchData();
-  }, []);
+    // Usamos debounce simple para no saturar al tipear
+    const delayDebounceFn = setTimeout(() => {
+      fetchData();
+    }, 400);
+    return () => clearTimeout(delayDebounceFn);
+  }, [page, searchTerm, statusFilter]);
 
   const fetchData = async () => {
     try {
       setLoading(true);
       const [oRes, dRes] = await Promise.all([
-        ordersApi.getAll(),
+        ordersApi.getAll({ page, limit: 10, status: statusFilter !== 'all' ? statusFilter : '', search: searchTerm }),
         driversApi.getAll()
       ]);
       setOrders(oRes.data.orders);
+      setTotalPages(oRes.data.totalPages || 1);
+      setTotalOrders(oRes.data.total || 0);
       setDrivers(dRes.data.filter(d => d.status === 'available' || d.status === 'on-delivery'));
     } catch (error) {
       addToast(error.friendlyMessage || "Error cargando la lista de órdenes", 'error');
@@ -64,15 +75,14 @@ const Orders = () => {
       };
 
       if (editingOrder) {
-        const res = await ordersApi.update(editingOrder._id, payload);
-        setOrders(orders.map(o => o._id === editingOrder._id ? res.data : o));
+        await ordersApi.update(editingOrder._id, payload);
         setEditingOrder(null);
       } else {
-        const res = await ordersApi.create(payload);
-        setOrders([res.data, ...orders]);
+        await ordersApi.create(payload);
         setIsModalOpen(false);
       }
       resetForm();
+      fetchData();
       addToast(editingOrder ? "Orden actualizada con éxito" : "Orden creada correctamente", 'success');
     } catch (error) {
       addToast(error.friendlyMessage || "Error al procesar la solicitud", 'error');
@@ -97,8 +107,7 @@ const Orders = () => {
   const handleAssignDriver = async (orderId, driverId) => {
     if (!driverId) return;
     try {
-      const res = await ordersApi.update(orderId, { driverId });
-      setOrders(orders.map(o => o._id === orderId ? res.data : o));
+      await ordersApi.update(orderId, { driverId });
       setIsAssigning(null);
       addToast("Conductor asignado satisfactoriamente", 'success');
       fetchData(); 
@@ -111,21 +120,14 @@ const Orders = () => {
     if (!orderToDelete) return;
     try {
       await ordersApi.delete(orderToDelete);
-      setOrders(orders.filter(o => o._id !== orderToDelete));
       addToast("Pedido eliminado del registro", 'success');
+      fetchData();
     } catch (error) {
       addToast(error.friendlyMessage || "Error al intentar eliminar la orden", 'error');
     } finally {
       setOrderToDelete(null);
     }
   };
-
-  const filteredOrders = orders.filter(order => {
-    const matchesSearch = order.orderNumber.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                         order.customer.name.toLowerCase().includes(searchTerm.toLowerCase());
-    const matchesStatus = statusFilter === 'all' || order.status === statusFilter;
-    return matchesSearch && matchesStatus;
-  });
 
   return (
     <div className="space-y-6 animate-in slide-in-from-bottom-4 duration-500 relative pb-20">
@@ -153,7 +155,7 @@ const Orders = () => {
               placeholder="Buscar por orden o cliente..." 
               className="w-full pl-12 pr-4 py-3 bg-secondary-50 border-none rounded-2xl focus:ring-4 focus:ring-primary-500/10 outline-none text-sm transition-all shadow-inner"
               value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
+              onChange={(e) => { setSearchTerm(e.target.value); setPage(1); }}
             />
           </div>
           
@@ -164,7 +166,7 @@ const Orders = () => {
             >
               <Filter size={18} />
               {statusFilter === 'all' ? 'FILTRAR' : statusFilter.replace('-', ' ')}
-              <ChevronDown size={14} className={`transition-transformDuration-200 ${showFilterMenu ? 'rotate-180' : ''}`} />
+              <ChevronDown size={14} className={`transition-transform duration-200 ${showFilterMenu ? 'rotate-180' : ''}`} />
             </button>
             
             {showFilterMenu && (
@@ -172,7 +174,7 @@ const Orders = () => {
                  {['all', 'pending', 'assigned', 'in-transit', 'delivered', 'cancelled'].map((st) => (
                    <button 
                      key={st}
-                     onClick={() => { setStatusFilter(st); setShowFilterMenu(false); }}
+                     onClick={() => { setStatusFilter(st); setPage(1); setShowFilterMenu(false); }}
                      className={`w-full text-left px-5 py-3 text-xs font-black uppercase tracking-widest hover:bg-primary-50 hover:text-primary-600 transition-all ${statusFilter === st ? 'bg-primary-50 text-primary-600' : 'text-secondary-600'}`}
                    >
                      {st === 'all' ? 'Ver Todos' : st.replace('-', ' ')}
@@ -202,12 +204,12 @@ const Orders = () => {
                     <td colSpan="6" className="px-8 py-10"><div className="h-4 bg-secondary-100 rounded-full w-full"></div></td>
                   </tr>
                 ))
-              ) : filteredOrders.length === 0 ? (
+              ) : orders.length === 0 ? (
                 <tr>
                   <td colSpan="6" className="px-8 py-32 text-center text-secondary-400 font-bold">No se encontraron órdenes para este criterio</td>
                 </tr>
               ) : (
-                filteredOrders.map(order => (
+                orders.map(order => (
                   <tr key={order._id} className="group hover:bg-primary-50/20 transition-all">
                     <td className="px-8 py-5">
                       <span className="font-black text-secondary-900 group-hover:text-primary-600 transition-colors">{order.orderNumber}</span>
@@ -278,6 +280,42 @@ const Orders = () => {
             </tbody>
           </table>
         </div>
+
+        {/* Paginación UI */}
+        {!loading && totalPages > 1 && (
+          <div className="p-6 border-t border-secondary-100 flex items-center justify-between bg-slate-50/50">
+            <span className="text-[10px] font-black uppercase tracking-widest text-secondary-400">
+              Mostrando {orders.length} de {totalOrders} resultados
+            </span>
+            <div className="flex gap-2">
+              <button 
+                disabled={page === 1}
+                onClick={() => setPage(p => p - 1)}
+                className="px-4 py-2 border border-secondary-200 rounded-xl text-[10px] font-black uppercase tracking-widest text-secondary-600 hover:bg-white disabled:opacity-40"
+              >
+                Anterior
+              </button>
+              <div className="flex items-center gap-1">
+                {Array.from({ length: totalPages }, (_, i) => i + 1).map(p => (
+                  <button
+                    key={p}
+                    onClick={() => setPage(p)}
+                    className={`w-8 h-8 rounded-xl text-[10px] font-black flex items-center justify-center transition-all ${page === p ? 'bg-primary-600 text-white shadow-md shadow-primary-500/30' : 'text-secondary-500 hover:bg-white'}`}
+                  >
+                    {p}
+                  </button>
+                ))}
+              </div>
+              <button 
+                disabled={page === totalPages}
+                onClick={() => setPage(p => p + 1)}
+                className="px-4 py-2 border border-secondary-200 rounded-xl text-[10px] font-black uppercase tracking-widest text-secondary-600 hover:bg-white disabled:opacity-40"
+              >
+                Siguiente
+              </button>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* MODAL: Nueva / Editar Orden */}

@@ -12,13 +12,20 @@ import Reports from './pages/Reports';
 import Settings from './pages/Settings';
 import DriverHome from './pages/DriverHome';
 import UserManagement from './pages/UserManagement';
-
 import { ToastProvider, useToast } from './components/Toast';
+import { clearSession } from './services/api';
 
 const AppContent = () => {
-  const [userInfo, setUserInfo] = useState(
-    localStorage.getItem('userInfo') ? JSON.parse(localStorage.getItem('userInfo')) : null
-  );
+  const [userInfo, setUserInfo] = useState(() => {
+    try {
+      const stored = localStorage.getItem('userInfo');
+      return stored ? JSON.parse(stored) : null;
+    } catch {
+      return null;
+    }
+  });
+
+  const { addToast } = useToast();
 
   const loginHandler = (data) => {
     localStorage.setItem('userInfo', JSON.stringify(data));
@@ -26,10 +33,23 @@ const AppContent = () => {
   };
 
   const logoutHandler = () => {
-    localStorage.removeItem('userInfo');
+    clearSession();
     setUserInfo(null);
   };
 
+  // Escuchar logout forzado por JWT expirado / inválido
+  useEffect(() => {
+    const handleForcedLogout = () => {
+      clearSession();
+      setUserInfo(null);
+      addToast('Sesión expirada. Por favor inicia sesión nuevamente.', 'error');
+    };
+
+    window.addEventListener('tracky:logout', handleForcedLogout);
+    return () => window.removeEventListener('tracky:logout', handleForcedLogout);
+  }, [addToast]);
+
+  // ── Rutas públicas (sin sesión) ──────────────────────────────
   if (!userInfo) {
     return (
       <Router>
@@ -42,19 +62,23 @@ const AppContent = () => {
     );
   }
 
-  // Si es un repartidor, solo ve su portal móvil simplificado
+  // ── Portal del conductor (vista móvil simplificada) ───────────
   if (userInfo.role === 'driver') {
     return (
       <Router>
         <Routes>
           <Route path="/track" element={<PublicTracking />} />
           <Route path="/track/:id" element={<PublicTracking />} />
-          <Route path="*" element={<DriverHome user={userInfo} onLogout={logoutHandler} />} />
+          <Route
+            path="*"
+            element={<DriverHome user={userInfo} onLogout={logoutHandler} />}
+          />
         </Routes>
       </Router>
     );
   }
 
+  // ── Panel administrativo ─────────────────────────────────────
   return (
     <Router>
       <Layout user={userInfo} onLogout={logoutHandler}>
@@ -63,27 +87,25 @@ const AppContent = () => {
           <Route path="/orders" element={<Orders user={userInfo} />} />
           <Route path="/drivers" element={<Drivers user={userInfo} />} />
           <Route path="/map" element={<MapView user={userInfo} />} />
+          <Route path="/reports" element={<Reports user={userInfo} />} />
+          <Route path="/settings" element={<Settings user={userInfo} />} />
           {(userInfo.role === 'superadmin' || userInfo.role === 'admin') && (
             <>
               <Route path="/companies" element={<Companies user={userInfo} />} />
               <Route path="/users" element={<UserManagement user={userInfo} />} />
             </>
           )}
-          <Route path="/reports" element={<Reports user={userInfo} />} />
-          <Route path="/settings" element={<Settings user={userInfo} />} />
-          <Route path="*" element={<Navigate to="/" />} />
+          <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </Layout>
     </Router>
   );
 };
 
-const App = () => {
-  return (
-    <ToastProvider>
-      <AppContent />
-    </ToastProvider>
-  );
-};
+const App = () => (
+  <ToastProvider>
+    <AppContent />
+  </ToastProvider>
+);
 
 export default App;
