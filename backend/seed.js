@@ -147,10 +147,10 @@ async function seed() {
 
     console.log(`🚚 ${createdDrivers.length} conductores creados (contraseña: driver1234)`);
 
-    // ── Órdenes demo ─────────────────────────────────────────────
+    // ── Órdenes demo (> 50 para testear paginación y últimos 7 días para analítica) ──
     const statuses   = ['pending', 'assigned', 'in-transit', 'delivered', 'cancelled'];
     const priorities = ['low', 'medium', 'high'];
-    const customers  = [
+    const baseCustomers  = [
       { name: 'Acme Corp',       address: '123 Broadway, New York, NY' },
       { name: 'TechStart Inc',   address: '456 5th Ave, New York, NY' },
       { name: 'Green Supplies',  address: '789 Park Ave, New York, NY' },
@@ -161,24 +161,36 @@ async function seed() {
       { name: 'Pioneer Goods',   address: '258 Spring St, New York, NY' },
     ];
 
-    const orders = customers.map((customer, i) => {
-      const status = statuses[i % statuses.length];
+    const orders = Array.from({ length: 55 }).map((_, i) => {
+      // Distribución aleatoria real en los últimos 7 días
+      const daysAgo = Math.floor(Math.random() * 7);
+      const randomDate = new Date();
+      randomDate.setDate(randomDate.getDate() - daysAgo);
+
+      // Usualmente lo cancelado es poco, pending o entregado es más
+      let statusIndex = Math.floor(Math.random() * statuses.length);
+      if (i % 3 === 0) statusIndex = 3; // Forzar más entregados para la analítica (success rate real)
+
+      const status = statuses[statusIndex];
       const needsDriver = ['assigned', 'in-transit', 'delivered'].includes(status);
+      const customer = baseCustomers[i % baseCustomers.length];
+
       return {
-        orderNumber: `ORD-${1000 + i}`,
-        customer,
+        orderNumber: `ORD-${100000 + i * 7}`,
+        customer: { ...customer, name: `${customer.name} #${i}` }, // Diferenciar
         status,
-        priority: priorities[i % priorities.length],
+        priority: priorities[Math.floor(Math.random() * priorities.length)],
         company: company._id,
         driver: needsDriver ? createdDrivers[i % createdDrivers.length]._id : null,
-        items: `Package ${i + 1} – ${Math.floor(Math.random() * 5) + 1} items`,
-        notes: i % 3 === 0 ? 'Handle with care' : '',
-        estimatedDelivery: new Date(Date.now() + (i + 1) * 86400000),
+        items: `Carga corporativa tipo ${i % 3 === 0 ? 'A' : 'B'} con ${Math.floor(Math.random() * 50) + 10} unidades`,
+        createdAt: randomDate,
+        updatedAt: randomDate,
+        estimatedDelivery: new Date(randomDate.getTime() + 86400000), // 1 día después de crearse
       };
     });
 
     await Order.insertMany(orders);
-    console.log(`📦 ${orders.length} órdenes creadas`);
+    console.log(`📦 ${orders.length} órdenes creadas y esparcidas en los últimos 7 días`);
 
     console.log('\n🎉 Seed completado exitosamente!');
     console.log('─────────────────────────────────────────');
