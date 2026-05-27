@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, Link } from 'react-router-dom';
-import { MapContainer, TileLayer, Marker, Popup, useMap } from 'react-leaflet';
+import { MapContainer, TileLayer, Marker, Popup, useMap, Polyline } from 'react-leaflet';
 import L from 'leaflet';
 import { Package, Truck, MapPin, Clock, Search, ArrowLeft, ChevronRight, CheckCircle2 } from 'lucide-react';
 import axios from 'axios';
@@ -19,6 +19,32 @@ let DefaultIcon = L.icon({
 });
 L.Marker.prototype.options.icon = DefaultIcon;
 
+const driverIcon = L.divIcon({
+  className: '',
+  iconSize: [36, 36],
+  iconAnchor: [18, 18],
+  html: `<div style="
+    width:36px;height:36px;border-radius:50%;
+    background:#3b82f6;border:3px solid white;
+    box-shadow:0 4px 12px rgba(0,0,0,0.3);
+    display:flex;align-items:center;justify-content:center;
+    font-size:16px;font-weight:900;color:white;
+  ">🚚</div>`
+});
+
+const customerIcon = L.divIcon({
+  className: '',
+  iconSize: [36, 36],
+  iconAnchor: [18, 36],
+  html: `<div style="
+    width:36px;height:36px;border-radius:50%;
+    background:#ef4444;border:3px solid white;
+    box-shadow:0 4px 12px rgba(0,0,0,0.3);
+    display:flex;align-items:center;justify-content:center;
+    font-size:16px;color:white;
+  ">🎁</div>`
+});
+
 const RecenterMap = ({ position }) => {
   const map = useMap();
   useEffect(() => {
@@ -34,6 +60,7 @@ const PublicTracking = () => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [arrivedAlert, setArrivedAlert] = useState(null);
+  const [pathHistory, setPathHistory] = useState([]);
 
   const fetchTracking = async (number) => {
     if (!number) return;
@@ -43,9 +70,11 @@ const PublicTracking = () => {
       const BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:5000';
       const { data } = await axios.get(`${BASE_URL}/api/orders/track/${number}`);
       setOrder(data);
+      setPathHistory(data.pathHistory || []);
     } catch (err) {
       setError(err.response?.data?.message || 'No se pudo encontrar el pedido');
       setOrder(null);
+      setPathHistory([]);
     } finally {
       setLoading(false);
     }
@@ -59,16 +88,40 @@ const PublicTracking = () => {
 
     on('driver_location_update', (data) => {
       if (order.driver && data.driverId === order.driver._id) {
-        setOrder(prev => ({
-          ...prev,
-          driver: { ...prev.driver, location: data.location }
-        }));
+        setOrder(prev => {
+          // Pintar recorrido únicamente si la orden ya está "in-transit" (En Ruta)
+          if (prev && prev.status === 'in-transit') {
+            setPathHistory(pathPrev => {
+              if (pathPrev.length > 0) {
+                const last = pathPrev[pathPrev.length - 1];
+                if (last[0] === data.location.lat && last[1] === data.location.lng) {
+                  return pathPrev;
+                }
+              }
+              return [...pathPrev, [data.location.lat, data.location.lng]];
+            });
+          }
+          return {
+            ...prev,
+            driver: { ...prev.driver, location: data.location }
+          };
+        });
       }
     });
 
     on('order_status_update', (data) => {
       if (data.orderId === order._id || data.orderNumber === order.orderNumber) {
-        setOrder(prev => ({ ...prev, status: data.status }));
+        setOrder(prev => {
+          if (data.status === 'in-transit') {
+            // Si el conductor inicia viaje, pintar el primer punto de partida
+            if (prev && prev.driver?.location) {
+              setPathHistory([[prev.driver.location.lat, prev.driver.location.lng]]);
+            } else {
+              setPathHistory([]);
+            }
+          }
+          return { ...prev, status: data.status };
+        });
       }
     });
 
@@ -229,15 +282,43 @@ const PublicTracking = () => {
                       className="w-full h-full"
                     >
                       <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
+                      {pathHistory.length > 1 && (
+                        <Polyline
+                          positions={pathHistory}
+                          pathOptions={{ color: '#3b82f6', weight: 4, opacity: 0.8 }}
+                        />
+                      )}
                       {order.driver?.location && (
                         <>
-                          <Marker position={[order.driver.location.lat, order.driver.location.lng]}>
+                          <Marker 
+                            position={[order.driver.location.lat, order.driver.location.lng]}
+                            icon={driverIcon}
+                          >
                             <Popup>
-                              Ubicación actual de tu pedido
+                              <div className="p-1 font-bold text-xs">Ubicación actual de tu pedido 🚚</div>
                             </Popup>
                           </Marker>
                           <RecenterMap position={[order.driver.location.lat, order.driver.location.lng]} />
                         </>
+                      )}
+                      {order.customer?.coordinates?.lat && (
+                        <Marker 
+                          position={[order.customer.coordinates.lat, order.customer.coordinates.lng]}
+                          icon={customerIcon}
+                        >
+                          <Popup>
+                            <div className="p-1 font-bold text-xs">Destino de Entrega 🎁</div>
+                          </Popup>
+                        </Marker>
+                      )}
+                      {order.driver?.location && order.customer?.coordinates?.lat && (
+                        <Polyline
+                          positions={[
+                            [order.driver.location.lat, order.driver.location.lng],
+                            [order.customer.coordinates.lat, order.customer.coordinates.lng]
+                          ]}
+                          pathOptions={{ color: '#f59e0b', weight: 3, dashArray: '6, 8', opacity: 0.8 }}
+                        />
                       )}
                     </MapContainer>
                     <div className="absolute bottom-4 left-4 right-4 bg-white/90 backdrop-blur-md p-3 rounded-2xl text-[10px] font-black uppercase tracking-widest text-center shadow-lg border border-white/20">

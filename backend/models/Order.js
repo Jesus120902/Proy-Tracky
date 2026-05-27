@@ -40,6 +40,7 @@ const orderSchema = new mongoose.Schema(
     notes: { type: String, default: '' },
     estimatedDelivery: { type: Date, default: null },
     assignedAt: Date,
+    transitStartedAt: Date,
     deliveredAt: Date,
     evidence: {
       signature: String, // Base64

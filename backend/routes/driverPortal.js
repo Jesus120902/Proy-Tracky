@@ -52,6 +52,9 @@ router.patch('/orders/:id/status', async (req, res, next) => {
 
     // Actualizar estado de la orden
     order.status = status;
+    if (status === 'in-transit') {
+      order.transitStartedAt = new Date();
+    }
     if (status === 'delivered') {
       order.deliveredAt = new Date();
       if (req.body.evidence) {

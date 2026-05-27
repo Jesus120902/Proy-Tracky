@@ -63,73 +63,106 @@ const DriverHome = ({ user, onLogout }) => {
     }
   };
 
-  // ── Simulador GPS ───────────────────
+  // ── Auto-Simulador de GPS ───────────────────
   const [isSimulating, setIsSimulating] = useState(false);
   const simIntervalRef = React.useRef(null);
+  const simCoordsRef = React.useRef(null);
+  const dataRef = React.useRef(data);
 
+  // Mantener el ref de data actualizado
   useEffect(() => {
-    return () => clearInterval(simIntervalRef.current);
-  }, []);
+    dataRef.current = data;
+  }, [data]);
 
-  const toggleSimulation = () => {
-    if (isSimulating) {
-      clearInterval(simIntervalRef.current);
-      setIsSimulating(false);
-      setGpsStatus('GPS Activo ✅');
-      addToast('Simulador GPS detenido', 'info');
-    } else {
-      setIsSimulating(true);
-      setGpsStatus('Simulador Auto 🛰️');
-      addToast('Arrancando Vehículo Auto-Pilotado...', 'success');
-      
-      let currentLat = data?.driver?.location?.lat || -12.0464;
-      let currentLng = data?.driver?.location?.lng || -77.0428;
-
-      simIntervalRef.current = setInterval(() => {
-        // Desplazamiento MUCHO más rápido
-        currentLat += (Math.random() * 0.003) - 0.001; 
-        currentLng += (Math.random() * 0.003) - 0.001;
-        
-        if (data?.driver?._id) {
-          emitLocation({
-            driverId: data.driver._id,
-            location: { lat: currentLat, lng: currentLng }
-          });
-        }
-      }, 1000); // 1 segundo
-    }
-  };
-
+  // Cargar órdenes al inicio
   useEffect(() => {
     fetchMyOrders();
-    
-    // Si estamos simulando, apagamos el sensor real para que no haya latigazos en el mapa
-    if (isSimulating) return;
+  }, []);
 
-    if ("geolocation" in navigator) {
-      const watchId = navigator.geolocation.watchPosition(
-        (position) => {
-          if (isSimulating) return; // doble barrera
-          const { latitude, longitude } = position.coords;
-          setGpsStatus('GPS Activo ✅');
-          if (data?.driver?._id) {
-            emitLocation({
-              driverId: data.driver._id,
-              location: { lat: latitude, lng: longitude }
-            });
-          }
-        },
-        (error) => {
-          console.error("Error de GPS:", error);
-          setGpsStatus(`Error GPS: ${error.message} ❌`);
-        },
-        { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
-      );
-      return () => navigator.geolocation.clearWatch(watchId);
-    } else {
-      setGpsStatus('GPS No soportado 🚫');
-    }
-  }, [data?.driver?._id, isSimulating]);
+  // Lógica de simulación reactiva al estado "in-transit"
+  useEffect(() => {
+    simIntervalRef.current = setInterval(() => {
+      const activeTransitOrders = dataRef.current?.orders?.filter(o => o.status === 'in-transit') || [];
+
+      if (activeTransitOrders.length === 0) {
+        // Si no hay órdenes activas en tránsito, apagar el simulador
+        setIsSimulating(prev => {
+          if (prev) return false;
+          return prev;
+        });
+        setGpsStatus(prev => {
+          if (prev !== 'Simulador Inactivo 💤') return 'Simulador Inactivo 💤';
+          return prev;
+        });
+        simCoordsRef.current = null; // Reiniciar coordenadas para la siguiente simulación
+        return;
+      }
+
+      // Si hay órdenes en tránsito
+      setIsSimulating(prev => {
+        if (!prev) return true;
+        return prev;
+      });
+      setGpsStatus(prev => {
+        if (prev !== 'Autopilot Activo 🛰️') return 'Autopilot Activo 🛰️';
+        return prev;
+      });
+
+      // Inicializar coordenadas si no están cargadas
+      if (!simCoordsRef.current) {
+        simCoordsRef.current = {
+          lat: dataRef.current?.driver?.location?.lat || -12.0464,
+          lng: dataRef.current?.driver?.location?.lng || -77.0428
+        };
+      }
+
+      const activeOrdersList = dataRef.current?.orders?.filter(o => o.status === 'in-transit' || o.status === 'assigned') || [];
+      const currentOrder = activeOrdersList[0];
+      
+      const targetLat = currentOrder?.customer?.coordinates?.lat;
+      const targetLng = currentOrder?.customer?.coordinates?.lng;
+
+      let currentLat = simCoordsRef.current.lat;
+      let currentLng = simCoordsRef.current.lng;
+
+      if (targetLat && targetLng) {
+        const dLat = targetLat - currentLat;
+        const dLng = targetLng - currentLng;
+        const distance = Math.sqrt(dLat * dLat + dLng * dLng);
+
+        // Si llegó a destino (~50 metros), se queda ahí
+        if (distance < 0.0008) {
+          currentLat = targetLat;
+          currentLng = targetLng;
+        } else {
+          const step = 0.0006; // velocidad del simulador
+          currentLat += (dLat / distance) * step;
+          currentLng += (dLng / distance) * step;
+        }
+      } else {
+        // Si no hay coordenadas (drift aleatorio)
+        currentLat += (Math.random() * 0.002) - 0.001; 
+        currentLng += (Math.random() * 0.002) - 0.001;
+      }
+
+      // Guardar coordenadas actualizadas en el ref
+      simCoordsRef.current = { lat: currentLat, lng: currentLng };
+
+      if (dataRef.current?.driver?._id) {
+        emitLocation({
+          driverId: dataRef.current.driver._id,
+          location: { lat: currentLat, lng: currentLng }
+        });
+      }
+    }, 1000);
+
+    return () => {
+      if (simIntervalRef.current) {
+        clearInterval(simIntervalRef.current);
+        simIntervalRef.current = null;
+      }
+    };
+  }, []);
 
   // ── Sincronización offline en segundo plano ─────────────────
   useEffect(() => {
@@ -192,6 +225,12 @@ const DriverHome = ({ user, onLogout }) => {
     try {
       await driverApi.updateOrderStatus(orderId, newStatus);
       addToast(`Pedido actualizado: ${newStatus}`, 'success');
+      if (newStatus === 'in-transit') {
+        simCoordsRef.current = {
+          lat: -12.046374,
+          lng: -77.042793
+        };
+      }
       fetchMyOrders();
     } catch (err) {
       if (!err.response || !navigator.onLine) {
@@ -328,29 +367,14 @@ const DriverHome = ({ user, onLogout }) => {
           </button>
         </div>
         
-        <div className="mt-8 flex gap-4">
-           {/* Modificado para incluir el botón del simulador al lado de los contadores */}
-           <div className="flex-[2] flex gap-4">
-             <div className="flex-1 bg-white/5 p-4 rounded-2xl border border-white/5 backdrop-blur-sm">
-                <p className="text-[9px] font-black uppercase opacity-60 mb-1">Entregas Hoy</p>
-                <p className="text-2xl font-black">{completedOrders.length}</p>
-             </div>
-             <div className="flex-1 bg-primary-600/20 p-4 rounded-2xl border border-primary-500/20 backdrop-blur-sm">
-                <p className="text-[9px] font-black uppercase text-primary-400 mb-1">Pendientes</p>
-                <p className="text-2xl font-black">{activeOrders.length}</p>
-             </div>
+        <div className="mt-8 grid grid-cols-2 gap-4">
+           <div className="bg-white/5 p-4 rounded-2xl border border-white/5 backdrop-blur-sm">
+              <p className="text-[9px] font-black uppercase opacity-60 mb-1">Entregas Hoy</p>
+              <p className="text-2xl font-black">{completedOrders.length}</p>
            </div>
-           
-           <div className="flex-1 flex items-center justify-center">
-             <button 
-               onClick={toggleSimulation}
-               className={`w-full h-full rounded-2xl border flex flex-col items-center justify-center gap-2 transition-all active:scale-95 shadow-lg ${isSimulating ? 'bg-indigo-600/30 border-indigo-500 text-indigo-300' : 'bg-slate-800 border-slate-700 text-slate-400 hover:bg-slate-700'}`}
-             >
-                <Navigation size={24} className={isSimulating ? 'animate-bounce text-indigo-400' : ''} />
-                <span className="text-[8px] font-black uppercase tracking-widest text-center">
-                  {isSimulating ? 'Detener\nPiloto' : 'Auto\nSimulador'}
-                </span>
-             </button>
+           <div className="bg-primary-600/20 p-4 rounded-2xl border border-primary-500/20 backdrop-blur-sm">
+              <p className="text-[9px] font-black uppercase text-primary-400 mb-1">Pendientes</p>
+              <p className="text-2xl font-black">{activeOrders.length}</p>
            </div>
         </div>
       </header>

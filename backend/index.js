@@ -118,6 +118,16 @@ io.on('connection', (socket) => {
     if (socket.companyId) {
       io.to(socket.companyId).emit('driver_location_update', data);
       
+      // Actualizar la ubicación actual del conductor en el modelo Driver
+      try {
+        const Driver = require('./models/Driver');
+        await Driver.findByIdAndUpdate(data.driverId, {
+          location: { lat: data.location.lat, lng: data.location.lng }
+        });
+      } catch (err) {
+        console.error('Error actualizando ubicación de conductor en DB:', err);
+      }
+      
       // Lógica de Geocercas (Geofencing) reactiva
       try {
         const Order = require('./models/Order');
@@ -167,7 +177,7 @@ io.on('connection', (socket) => {
 
       // Guardar en historial de forma "limpia"
       try {
-        const today = new Date().toISOString().split('T')[0];
+        const today = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Lima', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date());
         const point = { lat: data.location.lat, lng: data.location.lng, timestamp: new Date() };
         
         // Buscamos si ya existe el documento de hoy para este conductor

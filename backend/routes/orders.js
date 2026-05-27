@@ -17,19 +17,51 @@ router.get('/track/:orderNumber', async (req, res, next) => {
       return next(new Error('No se encontró ningún pedido con ese número'));
     }
 
-    // Retornar solo lo necesario para el cliente final
+    // Buscar historial de ubicación de hoy para el conductor asignado
+    let pathHistory = [];
+    if (order.driver) {
+      try {
+        const LocationHistory = require('../models/LocationHistory');
+        const today = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Lima', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date());
+        const history = await LocationHistory.findOne({
+          driver: order.driver._id,
+          date: today
+        });
+        if (history && history.path) {
+          let points = history.path;
+          if (order.transitStartedAt) {
+            const startTime = new Date(order.transitStartedAt).getTime();
+            points = points.filter(p => new Date(p.timestamp).getTime() >= startTime);
+          } else if (order.status === 'in-transit') {
+            // Si por alguna razón histórica no tiene transitStartedAt pero está en tránsito, 
+            // usar el updatedAt aproximado de cuando cambió de estado
+            const startTime = new Date(order.updatedAt).getTime() - 2000; // margen de 2 segundos
+            points = points.filter(p => new Date(p.timestamp).getTime() >= startTime);
+          } else {
+            // Si el pedido aún no está en ruta, no mostrar recorrido previo de otros pedidos
+            points = [];
+          }
+          pathHistory = points.map(p => [p.lat, p.lng]);
+        }
+      } catch (historyErr) {
+        console.error('Error al recuperar historial para tracking público:', historyErr);
+      }
+    }
+
+    // Retornar información para el cliente final (incluyendo cliente completo con coordenadas e historial de ruta)
     res.json({
       orderNumber: order.orderNumber,
       status: order.status,
-      customerName: order.customer.name,
-      address: order.customer.address,
+      customer: order.customer,
       items: order.items,
       company: order.company,
       driver: order.driver ? {
+        _id: order.driver._id,
         name: order.driver.name,
         location: order.driver.location,
         status: order.driver.status
       } : null,
+      pathHistory,
       updatedAt: order.updatedAt
     });
   } catch (err) {

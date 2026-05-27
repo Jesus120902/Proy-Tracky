@@ -38,6 +38,19 @@ const driverIcon = {
   'offline':     makeIcon('#94a3b8'),
 };
 
+const customerIcon = L.divIcon({
+  className: '',
+  iconSize: [36, 36],
+  iconAnchor: [18, 36],
+  html: `<div style="
+    width:36px;height:36px;border-radius:50%;
+    background:#ef4444;border:3px solid white;
+    box-shadow:0 4px 12px rgba(0,0,0,0.3);
+    display:flex;align-items:center;justify-content:center;
+    font-size:16px;color:white;
+  ">🎁</div>`
+});
+
 // Recentrar mapa animado ──────────────────────────────────────────
 const RecenterMap = ({ center }) => {
   const map = useMap();
@@ -293,6 +306,36 @@ const MapView = ({ user }) => {
                   center={routeHistory[routeHistory.length - 1]}
                   radius={8}
                   pathOptions={{ color: '#ef4444', fillColor: '#ef4444', fillOpacity: 1, weight: 2 }}
+                />
+              </>
+            )}
+
+            {/* Destino del pedido activo del conductor seleccionado */}
+            {selectedDriver?.activeOrder?.customer?.coordinates?.lat && (
+              <>
+                <Marker
+                  position={[
+                    selectedDriver.activeOrder.customer.coordinates.lat,
+                    selectedDriver.activeOrder.customer.coordinates.lng
+                  ]}
+                  icon={customerIcon}
+                >
+                  <Popup>
+                    <div className="p-2 text-xs min-w-[150px]">
+                      <p className="font-black text-secondary-900 uppercase">Destino de Entrega</p>
+                      <p className="font-bold text-primary-600 mt-1">{selectedDriver.activeOrder.orderNumber}</p>
+                      <p className="text-[10px] text-slate-500 font-medium leading-tight mt-1">{selectedDriver.activeOrder.customer.address}</p>
+                    </div>
+                  </Popup>
+                </Marker>
+                
+                {/* Línea punteada que conecta al conductor con el destino */}
+                <Polyline
+                  positions={[
+                    [selectedDriver.location.lat, selectedDriver.location.lng],
+                    [selectedDriver.activeOrder.customer.coordinates.lat, selectedDriver.activeOrder.customer.coordinates.lng]
+                  ]}
+                  pathOptions={{ color: '#f59e0b', weight: 3, dashArray: '6, 8', opacity: 0.8 }}
                 />
               </>
             )}

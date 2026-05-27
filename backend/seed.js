@@ -105,14 +105,14 @@ async function seed() {
     const statuses   = ['pending', 'assigned', 'in-transit', 'delivered', 'cancelled'];
     const priorities = ['low', 'medium', 'high'];
     const baseCustomers  = [
-      { name: 'Acme Corp',       address: 'Av. Javier Prado Este 123, San Isidro, Lima' },
-      { name: 'TechStart Inc',   address: 'Av. Pardo y Aliaga 456, San Isidro, Lima' },
-      { name: 'Green Supplies',  address: 'Calle Las Begonias 789, San Isidro, Lima' },
-      { name: 'Blue Ocean LLC',  address: 'Av. Larco 321, Miraflores, Lima' },
-      { name: 'Nova Retail',     address: 'Av. Benavides 654, Surco, Lima' },
-      { name: 'Summit Foods',    address: 'Av. Encalada 987, Surco, Lima' },
-      { name: 'Orbit Solutions', address: 'Jirón de la Unión 147, Cercado de Lima' },
-      { name: 'Pioneer Goods',   address: 'Av. Brasil 258, Jesús María, Lima' },
+      { name: 'Acme Corp',       address: 'Av. Javier Prado Este 123, San Isidro, Lima', coordinates: { lat: -12.0897, lng: -77.0302 } },
+      { name: 'TechStart Inc',   address: 'Av. Pardo y Aliaga 456, San Isidro, Lima', coordinates: { lat: -12.0961, lng: -77.0345 } },
+      { name: 'Green Supplies',  address: 'Calle Las Begonias 789, San Isidro, Lima', coordinates: { lat: -12.0912, lng: -77.0284 } },
+      { name: 'Blue Ocean LLC',  address: 'Av. Larco 321, Miraflores, Lima', coordinates: { lat: -12.1224, lng: -77.0298 } },
+      { name: 'Nova Retail',     address: 'Av. Benavides 654, Surco, Lima', coordinates: { lat: -12.1284, lng: -76.9984 } },
+      { name: 'Summit Foods',    address: 'Av. Encalada 987, Surco, Lima', coordinates: { lat: -12.1147, lng: -76.9792 } },
+      { name: 'Orbit Solutions', address: 'Jirón de la Unión 147, Cercado de Lima', coordinates: { lat: -12.0464, lng: -77.0428 } },
+      { name: 'Pioneer Goods',   address: 'Av. Brasil 258, Jesús María, Lima', coordinates: { lat: -12.0734, lng: -77.0487 } },
     ];
 
     const orders = Array.from({ length: 55 }).map((_, i) => {

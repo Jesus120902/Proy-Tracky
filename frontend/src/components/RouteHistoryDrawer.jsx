@@ -38,7 +38,7 @@ const formatTime = (isoString) => {
 
 // ── Componente principal ─────────────────────────────────────────
 const RouteHistoryDrawer = ({ driver, isOpen, onClose, onRouteLoaded }) => {
-  const [date, setDate]           = useState(new Date().toISOString().split('T')[0]);
+  const [date, setDate]           = useState(new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Lima', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date()));
   const [loading, setLoading]     = useState(false);
   const [historyData, setHistory] = useState(null);
   const [expanded, setExpanded]   = useState(null); // índice del punto expandido
@@ -122,7 +122,7 @@ const RouteHistoryDrawer = ({ driver, isOpen, onClose, onRouteLoaded }) => {
             <input
               type="date"
               value={date}
-              max={new Date().toISOString().split('T')[0]}
+              max={new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Lima', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date())}
               onChange={(e) => setDate(e.target.value)}
               className="bg-transparent text-white text-sm font-black outline-none flex-1 cursor-pointer"
             />

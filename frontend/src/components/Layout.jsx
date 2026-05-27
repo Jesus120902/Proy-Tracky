@@ -10,6 +10,7 @@ import {
   LogOut,
   Search,
   Settings as SettingsIcon,
+  ChevronLeft,
   ChevronRight,
   ShieldAlert,
   Users,
@@ -22,39 +23,61 @@ import {
 } from './NotificationCenter';
 
 // ── Sidebar item ────────────────────────────────────────────────
-const SidebarItem = ({ icon: Icon, label, path, active, onClick }) => (
+const SidebarItem = ({ icon: Icon, label, path, active, onClick, collapsed }) => (
   <Link
     to={path}
     onClick={onClick}
-    className={`flex items-center justify-between group px-4 py-3 rounded-xl transition-all duration-300 ${
+    className={`flex items-center ${
+      collapsed ? 'justify-center px-2 py-3' : 'justify-between px-4 py-3'
+    } group rounded-xl transition-all duration-300 ${
       active
         ? 'bg-primary-600 text-white shadow-lg shadow-primary-900/40 ring-1 ring-white/10'
         : 'text-slate-400 hover:bg-white/5 hover:text-white'
     }`}
+    title={collapsed ? label : undefined}
   >
     <div className="flex items-center gap-3">
       <Icon
         size={20}
         className={`${
           active ? 'text-white' : 'text-slate-500 group-hover:text-primary-400'
-        } transition-colors`}
+        } transition-colors flex-shrink-0`}
       />
-      <span className="font-medium text-sm">{label}</span>
+      {!collapsed && (
+        <span className="font-medium text-sm animate-in fade-in duration-300">
+          {label}
+        </span>
+      )}
     </div>
-    {active && <ChevronRight size={14} className="opacity-50" />}
+    {!collapsed && active && <ChevronRight size={14} className="opacity-50 animate-in fade-in duration-300" />}
   </Link>
 );
 
 // ── Navbar ──────────────────────────────────────────────────────
-const Navbar = ({ toggleSidebar, user }) => (
+const Navbar = ({ toggleSidebar, toggleCollapse, isCollapsed, user }) => (
   <header className="h-16 border-b border-secondary-200 bg-white/80 backdrop-blur-xl sticky top-0 z-30 px-6 flex items-center justify-between shadow-sm">
     <div className="flex items-center gap-4">
+      {/* Botón de sidebar para móvil */}
       <button
         onClick={toggleSidebar}
         className="p-2 hover:bg-secondary-100 rounded-lg lg:hidden transition-colors"
       >
         <Menu size={20} />
       </button>
+
+      {/* Botón de contraer/expandir para desktop */}
+      <button
+        onClick={toggleCollapse}
+        className="p-2 hover:bg-secondary-100 rounded-lg hidden lg:flex items-center justify-center transition-colors text-secondary-600 hover:text-secondary-900"
+        title={isCollapsed ? "Expandir menú" : "Contraer menú"}
+      >
+        {isCollapsed ? (
+          <ChevronRight size={20} className="animate-in fade-in duration-300" />
+        ) : (
+          <ChevronLeft size={20} className="animate-in fade-in duration-300" />
+        )}
+      </button>
+
       <div className="relative hidden md:block group">
         <Search
           className="absolute left-3 top-1/2 -translate-y-1/2 text-secondary-400 group-focus-within:text-primary-500 transition-colors"
@@ -95,6 +118,7 @@ const Navbar = ({ toggleSidebar, user }) => (
 // ── Layout principal ─────────────────────────────────────────────
 const Layout = ({ children, user, onLogout }) => {
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+  const [isCollapsed, setIsCollapsed] = useState(false);
   const location = useLocation();
 
   const menuItems = [
@@ -135,70 +159,80 @@ const Layout = ({ children, user, onLogout }) => {
 
       {/* ── Sidebar ── */}
       <aside
-        className={`fixed inset-y-0 left-0 z-40 w-72 bg-slate-950 transform transition-transform duration-300 lg:translate-x-0 lg:static lg:inset-0 ${
+        className={`fixed inset-y-0 left-0 z-40 bg-slate-950 transform transition-all duration-300 lg:translate-x-0 lg:static lg:inset-0 ${
+          isCollapsed ? 'lg:w-20 w-72' : 'lg:w-72 w-72'
+        } ${
           isSidebarOpen ? 'translate-x-0' : '-translate-x-full'
         }`}
       >
-        <div className="h-full flex flex-col p-6">
+        <div className={`h-full flex flex-col ${isCollapsed ? 'p-4' : 'p-6'} overflow-hidden transition-all duration-300`}>
           {/* Logo y empresa */}
-          <div className="flex items-center gap-3 px-2 mb-10">
-            <div className="w-12 h-12 flex items-center justify-center overflow-hidden">
+          <div className={`flex items-center ${isCollapsed ? 'justify-center' : 'gap-3 px-2'} mb-10`}>
+            <div className="w-12 h-12 flex items-center justify-center overflow-hidden flex-shrink-0">
                <img src="/logo.png" alt="Logo" className="w-full h-full object-contain" onError={(e) => { e.target.style.display='none'; e.target.nextSibling.style.display='block'; }} />
                <div style={{display: 'none'}} className="w-full h-full bg-primary-600 rounded-2xl flex items-center justify-center text-white shadow-2xl shadow-primary-500/20 ring-1 ring-white/10">
                  <Truck size={28} />
                </div>
             </div>
-            <div>
-              <h1 className="text-xl font-black text-white tracking-tighter truncate max-w-[160px]">
-                {user.company?.name || 'Tracky Admin'}
-              </h1>
-              <p className="text-[9px] uppercase tracking-[0.2em] text-primary-500 font-black leading-none mt-1">
-                ORGANIZACIÓN VERIFICADA
-              </p>
-            </div>
+            {!isCollapsed && (
+              <div className="animate-in fade-in duration-300 flex-1 min-w-0">
+                <h1 className="text-xl font-black text-white tracking-tighter truncate">
+                  {user.company?.name || 'Tracky Admin'}
+                </h1>
+                <p className="text-[9px] uppercase tracking-[0.2em] text-primary-500 font-black leading-none mt-1">
+                  ORGANIZACIÓN VERIFICADA
+                </p>
+              </div>
+            )}
           </div>
 
           {/* Menú */}
           <div className="flex-1 space-y-1.5 overflow-y-auto pr-2 custom-scrollbar">
-            <p className="px-4 text-[10px] uppercase tracking-widest text-slate-600 font-black mb-4">
-              Operaciones
-            </p>
+            {!isCollapsed && (
+              <p className="px-4 text-[10px] uppercase tracking-widest text-slate-600 font-black mb-4 animate-in fade-in duration-300">
+                Operaciones
+              </p>
+            )}
             {menuItems.map((item) => (
               <SidebarItem
                 key={item.path}
                 {...item}
                 active={location.pathname === item.path}
                 onClick={() => setIsSidebarOpen(false)}
+                collapsed={isCollapsed}
               />
             ))}
           </div>
 
           {/* Footer sidebar */}
           <div className="mt-auto pt-6 space-y-4">
-            <div className="bg-white/5 rounded-2xl p-4 border border-white/5">
-              <div className="flex items-center gap-3 mb-2">
-                <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">
-                  Plan Actual
-                </p>
-                <span className="text-[8px] bg-primary-500/20 text-primary-400 px-2 py-0.5 rounded-full font-black uppercase tracking-tighter">
-                  {user.company?.settings?.plan || 'Enterprise'}
-                </span>
+            {!isCollapsed && (
+              <div className="bg-white/5 rounded-2xl p-4 border border-white/5 animate-in fade-in duration-300">
+                <div className="flex items-center gap-3 mb-2">
+                  <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">
+                    Plan Actual
+                  </p>
+                  <span className="text-[8px] bg-primary-500/20 text-primary-400 px-2 py-0.5 rounded-full font-black uppercase tracking-tighter">
+                    {user.company?.settings?.plan || 'Enterprise'}
+                  </span>
+                </div>
+                <p className="text-xs font-bold text-white mb-2">Cuota de Conductores</p>
+                <div className="w-full bg-white/10 h-1 rounded-full overflow-hidden">
+                  <div className="bg-primary-500 h-full w-[40%] rounded-full shadow-[0_0_10px_rgba(59,130,246,0.5)]" />
+                </div>
               </div>
-              <p className="text-xs font-bold text-white mb-2">Cuota de Conductores</p>
-              <div className="w-full bg-white/10 h-1 rounded-full overflow-hidden">
-                <div className="bg-primary-500 h-full w-[40%] rounded-full shadow-[0_0_10px_rgba(59,130,246,0.5)]" />
-              </div>
-            </div>
+            )}
 
             <button
               onClick={onLogout}
-              className="flex items-center gap-3 px-4 py-3 text-red-400 hover:bg-red-400/10 rounded-xl w-full transition-all group"
+              className={`flex items-center ${isCollapsed ? 'justify-center px-0' : 'gap-3 px-4'} py-3 text-red-400 hover:bg-red-400/10 rounded-xl w-full transition-all group`}
+              title={isCollapsed ? "Cerrar Sesión Segura" : ""}
             >
               <LogOut
                 size={20}
-                className="group-hover:translate-x-[-2px] transition-transform"
+                className="group-hover:translate-x-[-2px] transition-transform flex-shrink-0"
               />
-              <span className="font-bold text-sm">Cerrar Sesión Segura</span>
+              {!isCollapsed && <span className="font-bold text-sm animate-in fade-in duration-300">Cerrar Sesión Segura</span>}
             </button>
           </div>
         </div>
@@ -206,7 +240,7 @@ const Layout = ({ children, user, onLogout }) => {
 
       {/* ── Contenido principal ── */}
       <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
-        <Navbar toggleSidebar={() => setIsSidebarOpen(!isSidebarOpen)} user={user} />
+        <Navbar toggleSidebar={() => setIsSidebarOpen(!isSidebarOpen)} toggleCollapse={() => setIsCollapsed(!isCollapsed)} isCollapsed={isCollapsed} user={user} />
         <main className="flex-1 overflow-y-auto p-6 md:p-8 lg:p-10 scroll-smooth">
           <div className="max-w-7xl mx-auto">{children}</div>
         </main>

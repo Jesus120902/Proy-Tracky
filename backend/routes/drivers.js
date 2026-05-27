@@ -123,7 +123,7 @@ router.delete('/:id', async (req, res, next) => {
 router.get('/:id/history', async (req, res, next) => {
   try {
     const { date } = req.query; // format YYYY-MM-DD
-    const queryDate = date || new Date().toISOString().split('T')[0];
+    const queryDate = date || new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Lima', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date());
     
     const history = await LocationHistory.findOne({
       driver: req.params.id,
