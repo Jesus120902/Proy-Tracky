@@ -33,6 +33,7 @@ const PublicTracking = () => {
   const [order, setOrder] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
+  const [arrivedAlert, setArrivedAlert] = useState(null);
 
   const fetchTracking = async (number) => {
     if (!number) return;
@@ -71,9 +72,16 @@ const PublicTracking = () => {
       }
     });
 
+    on('driver_arrived', (data) => {
+      if (data.orderNumber === order.orderNumber || data.orderId === order._id) {
+        setArrivedAlert(`El repartidor se encuentra a menos de ${data.distance} metros de tu ubicación.`);
+      }
+    });
+
     return () => {
       off('driver_location_update');
       off('order_status_update');
+      off('driver_arrived');
     };
   }, [order, on, off]);
 
@@ -139,6 +147,19 @@ const PublicTracking = () => {
 
         {order && (
           <div className="space-y-6 animate-in slide-in-from-bottom-6 duration-700">
+            {/* Alerta de Geocerca (Geofencing) */}
+            {arrivedAlert && (
+              <div className="bg-amber-500 text-white p-6 rounded-[2rem] shadow-xl border border-amber-400 flex items-center gap-4 animate-in fade-in zoom-in-95 duration-300">
+                <div className="bg-white/20 p-3.5 rounded-2xl">
+                  <Truck size={24} className="animate-bounce" />
+                </div>
+                <div>
+                  <h4 className="font-black text-sm uppercase tracking-wider">¡Tu pedido está muy cerca!</h4>
+                  <p className="text-xs font-bold opacity-90 mt-0.5">{arrivedAlert}</p>
+                </div>
+              </div>
+            )}
+
             {/* Cabecera de Resultado */}
             <div className="bg-white rounded-[2.5rem] overflow-hidden shadow-sm border border-slate-100">
               <div className="bg-secondary-900 p-8 text-white flex flex-col md:flex-row justify-between items-start md:items-center gap-6">
@@ -203,7 +224,7 @@ const PublicTracking = () => {
                  {/* Mapa en Vivo */}
                  <div className="bg-slate-200 rounded-[2rem] overflow-hidden min-h-[300px] shadow-inner relative ring-1 ring-slate-100">
                     <MapContainer 
-                      center={order.driver?.location ? [order.driver.location.lat, order.driver.location.lng] : [40.7128, -74.006]} 
+                      center={order.driver?.location ? [order.driver.location.lat, order.driver.location.lng] : [-12.0464, -77.0428]} 
                       zoom={13} 
                       className="w-full h-full"
                     >

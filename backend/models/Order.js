@@ -16,6 +16,10 @@ const orderSchema = new mongoose.Schema(
       name: { type: String, required: true },
       address: { type: String, required: true },
       phone: { type: String, default: '' },
+      coordinates: {
+        lat: { type: Number, default: null },
+        lng: { type: Number, default: null }
+      }
     },
     driver: {
       type: mongoose.Schema.Types.ObjectId,

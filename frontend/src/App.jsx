@@ -81,23 +81,32 @@ const AppContent = () => {
   // ── Panel administrativo ─────────────────────────────────────
   return (
     <Router>
-      <Layout user={userInfo} onLogout={logoutHandler}>
-        <Routes>
-          <Route path="/" element={<Dashboard user={userInfo} />} />
-          <Route path="/orders" element={<Orders user={userInfo} />} />
-          <Route path="/drivers" element={<Drivers user={userInfo} />} />
-          <Route path="/map" element={<MapView user={userInfo} />} />
-          <Route path="/reports" element={<Reports user={userInfo} />} />
-          <Route path="/settings" element={<Settings user={userInfo} />} />
-          {(userInfo.role === 'superadmin' || userInfo.role === 'admin') && (
-            <>
-              <Route path="/companies" element={<Companies user={userInfo} />} />
-              <Route path="/users" element={<UserManagement user={userInfo} />} />
-            </>
-          )}
-          <Route path="*" element={<Navigate to="/" replace />} />
-        </Routes>
-      </Layout>
+      <Routes>
+        {/* Rutas públicas accesibles incluso logueado */}
+        <Route path="/track" element={<PublicTracking />} />
+        <Route path="/track/:id" element={<PublicTracking />} />
+
+        {/* Aplicación Core */}
+        <Route path="*" element={
+          <Layout user={userInfo} onLogout={logoutHandler}>
+            <Routes>
+              <Route path="/" element={<Dashboard user={userInfo} />} />
+              <Route path="/orders" element={<Orders user={userInfo} />} />
+              <Route path="/drivers" element={<Drivers user={userInfo} />} />
+              <Route path="/map" element={<MapView user={userInfo} />} />
+              <Route path="/reports" element={<Reports user={userInfo} />} />
+              <Route path="/settings" element={<Settings user={userInfo} />} />
+              {(userInfo.role === 'superadmin' || userInfo.role === 'admin') && (
+                <>
+                  <Route path="/companies" element={<Companies user={userInfo} />} />
+                  <Route path="/users" element={<UserManagement user={userInfo} />} />
+                </>
+              )}
+              <Route path="*" element={<Navigate to="/" replace />} />
+            </Routes>
+          </Layout>
+        } />
+      </Routes>
     </Router>
   );
 };

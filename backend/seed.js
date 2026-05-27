@@ -71,62 +71,16 @@ async function seed() {
 
     // ── Conductores + sus usuarios ────────────────────────────────
     const driversData = [
-      {
-        name: 'Marcus Johnson',
-        email: 'marcus@tracky.com',
-        phone: '+1-555-0101',
-        vehicle: { type: 'Van', plate: 'TRK-001' },
-        status: 'available',
-        location: { lat: 40.7128, lng: -74.006 },
-        rating: 4.8,
-        totalDeliveries: 142,
-      },
-      {
-        name: 'Sofia Martinez',
-        email: 'sofia@tracky.com',
-        phone: '+1-555-0102',
-        vehicle: { type: 'Truck', plate: 'TRK-002' },
-        status: 'on-delivery',
-        location: { lat: 40.758, lng: -73.9855 },
-        rating: 4.9,
-        totalDeliveries: 217,
-      },
-      {
-        name: 'Liam Chen',
-        email: 'liam@tracky.com',
-        phone: '+1-555-0103',
-        vehicle: { type: 'Motorcycle', plate: 'TRK-003' },
-        status: 'available',
-        location: { lat: 40.7282, lng: -73.7949 },
-        rating: 4.7,
-        totalDeliveries: 98,
-      },
-      {
-        name: 'Aisha Patel',
-        email: 'aisha@tracky.com',
-        phone: '+1-555-0104',
-        vehicle: { type: 'Van', plate: 'TRK-004' },
-        status: 'offline',
-        location: { lat: 40.6892, lng: -74.0445 },
-        rating: 4.6,
-        totalDeliveries: 63,
-      },
-      {
-        name: 'Derek Williams',
-        email: 'derek@tracky.com',
-        phone: '+1-555-0105',
-        vehicle: { type: 'Car', plate: 'TRK-005' },
-        status: 'available',
-        location: { lat: 40.7549, lng: -73.984 },
-        rating: 4.5,
-        totalDeliveries: 321,
-      },
+      { name: 'Marcus Johnson', email: 'marcus@tracky.com' },
+      { name: 'Sofia Martinez', email: 'sofia@tracky.com' },
+      { name: 'Liam Chen', email: 'liam@tracky.com' },
+      { name: 'Aisha Patel', email: 'aisha@tracky.com' },
+      { name: 'Derek Williams', email: 'derek@tracky.com' },
     ];
 
-    const createdDrivers = [];
+    const createdUsers = [];
     for (const d of driversData) {
-      // Crear usuario conductor
-      const driverUser = await User.create({
+      const user = await User.create({
         name: d.name,
         email: d.email,
         password: 'driver1234',
@@ -134,16 +88,16 @@ async function seed() {
         company: company._id,
         active: true,
       });
-
-      // Crear perfil de conductor vinculado al usuario
-      const driver = await Driver.create({
-        ...d,
-        company: company._id,
-        user: driverUser._id,
-      });
-
-      createdDrivers.push(driver);
+      createdUsers.push(user);
     }
+
+    const createdDrivers = await Driver.insertMany([
+      { name: 'Marcus Johnson', email: 'marcus@tracky.com', user: createdUsers[0]._id, company: company._id, status: 'available', vehicle: { plate: 'ABC-123', type: 'Van', capacity: '1000kg' }, location: { lat: -12.0464, lng: -77.0428 } },
+      { name: 'Sofia Martinez', email: 'sofia@tracky.com', user: createdUsers[1]._id, company: company._id, status: 'available', vehicle: { plate: 'XYZ-987', type: 'Truck', capacity: '5000kg' }, location: { lat: -12.0550, lng: -77.0350 } },
+      { name: 'Liam Chen', email: 'liam@tracky.com', user: createdUsers[2]._id, company: company._id, status: 'available', vehicle: { plate: 'LMN-456', type: 'Motorcycle', capacity: '50kg' }, location: { lat: -12.0931, lng: -77.0229 } },
+      { name: 'Aisha Patel', email: 'aisha@tracky.com', user: createdUsers[3]._id, company: company._id, status: 'available', vehicle: { plate: 'LMN-777', type: 'Motorcycle', capacity: '50kg' }, location: { lat: -12.1192, lng: -77.0328 } },
+      { name: 'Derek Williams', email: 'derek@tracky.com', user: createdUsers[4]._id, company: company._id, status: 'available', vehicle: { plate: 'LMN-888', type: 'Van', capacity: '1000kg' }, location: { lat: -12.0734, lng: -77.0827 } },
+    ]);
 
     console.log(`🚚 ${createdDrivers.length} conductores creados (contraseña: driver1234)`);
 
@@ -151,14 +105,14 @@ async function seed() {
     const statuses   = ['pending', 'assigned', 'in-transit', 'delivered', 'cancelled'];
     const priorities = ['low', 'medium', 'high'];
     const baseCustomers  = [
-      { name: 'Acme Corp',       address: '123 Broadway, New York, NY' },
-      { name: 'TechStart Inc',   address: '456 5th Ave, New York, NY' },
-      { name: 'Green Supplies',  address: '789 Park Ave, New York, NY' },
-      { name: 'Blue Ocean LLC',  address: '321 Wall St, New York, NY' },
-      { name: 'Nova Retail',     address: '654 Madison Ave, New York, NY' },
-      { name: 'Summit Foods',    address: '987 Lexington Ave, New York, NY' },
-      { name: 'Orbit Solutions', address: '147 Canal St, New York, NY' },
-      { name: 'Pioneer Goods',   address: '258 Spring St, New York, NY' },
+      { name: 'Acme Corp',       address: 'Av. Javier Prado Este 123, San Isidro, Lima' },
+      { name: 'TechStart Inc',   address: 'Av. Pardo y Aliaga 456, San Isidro, Lima' },
+      { name: 'Green Supplies',  address: 'Calle Las Begonias 789, San Isidro, Lima' },
+      { name: 'Blue Ocean LLC',  address: 'Av. Larco 321, Miraflores, Lima' },
+      { name: 'Nova Retail',     address: 'Av. Benavides 654, Surco, Lima' },
+      { name: 'Summit Foods',    address: 'Av. Encalada 987, Surco, Lima' },
+      { name: 'Orbit Solutions', address: 'Jirón de la Unión 147, Cercado de Lima' },
+      { name: 'Pioneer Goods',   address: 'Av. Brasil 258, Jesús María, Lima' },
     ];
 
     const orders = Array.from({ length: 55 }).map((_, i) => {

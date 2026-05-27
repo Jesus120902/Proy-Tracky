@@ -24,6 +24,20 @@ const DriverHome = ({ user, onLogout }) => {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [gpsStatus, setGpsStatus] = useState('Buscando...');
+  const [isOptimizing, setIsOptimizing] = useState(false);
+
+  const handleOptimizeRoute = async () => {
+    setIsOptimizing(true);
+    try {
+      const res = await driverApi.optimizeRoute();
+      addToast(res.data.message || 'Ruta reordenada por cercanía', 'success');
+      fetchMyOrders();
+    } catch (err) {
+      addToast('Error al optimizar la ruta', 'error');
+    } finally {
+      setIsOptimizing(false);
+    }
+  };
   
   // Estados para Prueba de Entrega (POD)
   const [isPodModalOpen, setIsPodModalOpen] = useState(false);
@@ -68,13 +82,13 @@ const DriverHome = ({ user, onLogout }) => {
       setGpsStatus('Simulador Auto 🛰️');
       addToast('Arrancando Vehículo Auto-Pilotado...', 'success');
       
-      let currentLat = data?.driver?.location?.lat || 40.7128;
-      let currentLng = data?.driver?.location?.lng || -74.0060;
+      let currentLat = data?.driver?.location?.lat || -12.0464;
+      let currentLng = data?.driver?.location?.lng || -77.0428;
 
       simIntervalRef.current = setInterval(() => {
-        // Desplazamiento caótico progresivo (siempre moviéndose y no saltando)
-        currentLat += (Math.random() * 0.0006) - 0.0002; 
-        currentLng += (Math.random() * 0.0006) - 0.0002;
+        // Desplazamiento MUCHO más rápido
+        currentLat += (Math.random() * 0.003) - 0.001; 
+        currentLng += (Math.random() * 0.003) - 0.001;
         
         if (data?.driver?._id) {
           emitLocation({
@@ -82,7 +96,7 @@ const DriverHome = ({ user, onLogout }) => {
             location: { lat: currentLat, lng: currentLng }
           });
         }
-      }, 3000); // 3 segundos
+      }, 1000); // 1 segundo
     }
   };
 
@@ -117,6 +131,57 @@ const DriverHome = ({ user, onLogout }) => {
     }
   }, [data?.driver?._id, isSimulating]);
 
+  // ── Sincronización offline en segundo plano ─────────────────
+  useEffect(() => {
+    const syncOfflineDeliveries = async () => {
+      if (!navigator.onLine) return;
+      try {
+        const stored = localStorage.getItem('tracky:pending_deliveries');
+        if (!stored) return;
+        const pending = JSON.parse(stored);
+        if (pending.length === 0) return;
+
+        console.log(`🔄 Sincronizando ${pending.length} entrega(s) pendiente(s) offline...`);
+        let successCount = 0;
+
+        for (let i = 0; i < pending.length; i++) {
+          const item = pending[i];
+          try {
+            await driverApi.updateOrderStatus(item.orderId, item.status, {
+              evidence: item.evidence,
+              location: item.location
+            });
+            successCount++;
+          } catch (err) {
+            console.error(`Error sincronizando orden ${item.orderId}:`, err);
+            if (!err.response) break; // Error de red temporario, detener lote
+          }
+        }
+
+        if (successCount > 0) {
+          const remaining = pending.slice(successCount);
+          if (remaining.length === 0) {
+            localStorage.removeItem('tracky:pending_deliveries');
+          } else {
+            localStorage.setItem('tracky:pending_deliveries', JSON.stringify(remaining));
+          }
+          addToast(`Sincronización completa: ${successCount} entrega(s) subida(s) al servidor.`, 'success');
+          fetchMyOrders();
+        }
+      } catch (err) {
+        console.error('Error en proceso de sincronización:', err);
+      }
+    };
+
+    const interval = setInterval(syncOfflineDeliveries, 15000); // verificar cada 15 segundos
+    window.addEventListener('online', syncOfflineDeliveries);
+
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener('online', syncOfflineDeliveries);
+    };
+  }, [data]);
+
   const handleStatusUpdate = async (orderId, newStatus) => {
     if (newStatus === 'delivered') {
       setSelectedOrderForPod(orderId);
@@ -129,7 +194,30 @@ const DriverHome = ({ user, onLogout }) => {
       addToast(`Pedido actualizado: ${newStatus}`, 'success');
       fetchMyOrders();
     } catch (err) {
-      addToast('Error al actualizar pedido', 'error');
+      if (!err.response || !navigator.onLine) {
+        try {
+          const stored = localStorage.getItem('tracky:pending_deliveries');
+          const pending = stored ? JSON.parse(stored) : [];
+          pending.push({
+            orderId,
+            status: newStatus,
+            timestamp: Date.now()
+          });
+          localStorage.setItem('tracky:pending_deliveries', JSON.stringify(pending));
+
+          if (data) {
+            const updatedOrders = data.orders.map(o => 
+              o._id === orderId ? { ...o, status: newStatus } : o
+            );
+            setData({ ...data, orders: updatedOrders });
+          }
+          addToast('Sin conexión. Estado de ruta guardado localmente.', 'info');
+        } catch (stErr) {
+          addToast('Error de almacenamiento local', 'error');
+        }
+      } else {
+        addToast('Error al actualizar pedido', 'error');
+      }
     }
   };
 
@@ -141,16 +229,48 @@ const DriverHome = ({ user, onLogout }) => {
     }
     
     setIsCapturing(true);
+    const location = data?.driver?.location || null;
+
     try {
       await driverApi.updateOrderStatus(selectedOrderForPod, 'delivered', {
-        evidence: podEvidence
+        evidence: podEvidence,
+        location
       });
       addToast('Entrega completada con éxito', 'success');
       setIsPodModalOpen(false);
       resetPodState();
       fetchMyOrders();
     } catch (err) {
-      addToast('Error al procesar la entrega', 'error');
+      if (!err.response || !navigator.onLine) {
+        try {
+          const stored = localStorage.getItem('tracky:pending_deliveries');
+          const pending = stored ? JSON.parse(stored) : [];
+          pending.push({
+            orderId: selectedOrderForPod,
+            status: 'delivered',
+            evidence: podEvidence,
+            location,
+            timestamp: Date.now()
+          });
+          localStorage.setItem('tracky:pending_deliveries', JSON.stringify(pending));
+
+          if (data) {
+            const updatedOrders = data.orders.map(o => 
+              o._id === selectedOrderForPod ? { ...o, status: 'delivered', evidence: podEvidence } : o
+            );
+            setData({ ...data, orders: updatedOrders });
+          }
+
+          addToast('Sin conexión a internet. Entrega guardada localmente para sincronización automática.', 'info');
+          setIsPodModalOpen(false);
+          resetPodState();
+        } catch (storageErr) {
+          console.error(storageErr);
+          addToast('Error al guardar datos offline', 'error');
+        }
+      } else {
+        addToast(err.friendlyMessage || 'Error al procesar la entrega', 'error');
+      }
     } finally {
       setIsCapturing(false);
     }
@@ -236,7 +356,18 @@ const DriverHome = ({ user, onLogout }) => {
       </header>
 
       <main className="flex-1 p-6 space-y-6 -mt-4 overflow-y-auto">
-        <h3 className="text-[10px] font-black uppercase tracking-[0.3em] text-slate-400 ml-2">Mi Misión Actual</h3>
+        <div className="flex justify-between items-center px-2">
+          <h3 className="text-[10px] font-black uppercase tracking-[0.3em] text-slate-400">Mi Misión Actual</h3>
+          {activeOrders.length > 1 && (
+            <button
+              onClick={handleOptimizeRoute}
+              disabled={isOptimizing}
+              className="text-[10px] bg-slate-900 text-white font-black px-4 py-2.5 rounded-xl uppercase tracking-widest hover:bg-primary-600 disabled:opacity-50 transition-all flex items-center gap-1.5 shadow-md active:scale-95 border border-white/10"
+            >
+              🗺️ Optimizar Ruta
+            </button>
+          )}
+        </div>
         
         {activeOrders.length === 0 ? (
           <div className="bg-white rounded-[2rem] p-10 text-center border border-slate-100 shadow-sm">
@@ -358,6 +489,97 @@ const DriverHome = ({ user, onLogout }) => {
              <span className="text-[8px] font-black uppercase tracking-widest">Asistencia</span>
           </button>
       </footer>
+
+      {/* ── Modal Prueba de Entrega (POD) ── */}
+      {isPodModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-4 sm:p-0 bg-secondary-900/40 backdrop-blur-sm animate-in fade-in duration-200">
+          <div className="bg-white w-full max-w-md rounded-[2rem] overflow-hidden shadow-2xl animate-in slide-in-from-bottom-8">
+            <div className="flex justify-between items-center p-6 border-b border-slate-100 bg-slate-50">
+              <div className="flex items-center gap-3 text-secondary-900">
+                <CheckCircle2 size={24} className="text-primary-600" />
+                <h3 className="font-black text-lg">Prueba de Entrega</h3>
+              </div>
+              <button 
+                onClick={() => { setIsPodModalOpen(false); resetPodState(); }}
+                className="p-2 rounded-full hover:bg-slate-200 text-slate-500 transition-colors"
+              >
+                <X size={20} />
+              </button>
+            </div>
+            
+            <form onSubmit={handlePodSubmit} className="p-6 space-y-6">
+              <div>
+                <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-2 block">Nombre del Receptor</label>
+                <div className="relative">
+                  <User className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
+                  <input 
+                    type="text"
+                    required
+                    value={podEvidence.recipientName}
+                    onChange={e => setPodEvidence({...podEvidence, recipientName: e.target.value})}
+                    placeholder="Ej. Juan Pérez"
+                    className="w-full bg-slate-50 border-2 border-transparent focus:border-primary-500 focus:bg-white rounded-2xl py-4 pl-12 pr-4 outline-none transition-all font-bold text-slate-700"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-2 flex justify-between items-center">
+                  <span>Evidencia Fotográfica</span>
+                  <span className="text-secondary-400 opacity-60">(Opcional)</span>
+                </label>
+                <label className={`w-full h-32 border-2 border-dashed rounded-2xl flex flex-col items-center justify-center gap-2 cursor-pointer transition-colors ${podEvidence.photo ? 'border-primary-500 bg-primary-50' : 'border-slate-200 bg-slate-50 hover:bg-slate-100'}`}>
+                  {podEvidence.photo ? (
+                    <div className="relative w-full h-full p-2">
+                       <img src={podEvidence.photo} alt="Evidencia" className="w-full h-full object-cover rounded-xl" />
+                       <div className="absolute top-4 right-4 bg-primary-600 text-white p-1.5 rounded-lg shadow-lg">
+                         <Check size={16} />
+                       </div>
+                    </div>
+                  ) : (
+                    <>
+                      <Camera size={28} className="text-slate-400" />
+                      <span className="text-xs font-bold text-slate-500">Tomar foto del paquete</span>
+                    </>
+                  )}
+                  <input 
+                    type="file" 
+                    accept="image/*" 
+                    capture="environment"
+                    className="hidden" 
+                    onChange={handlePhotoCapture}
+                  />
+                </label>
+              </div>
+
+              <div>
+                <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-2 flex justify-between items-center">
+                  <span>Firma Digital</span>
+                  <span className="text-red-500 font-bold">*</span>
+                </label>
+                <div className="border-2 border-slate-200 rounded-2xl overflow-hidden bg-white">
+                  <SignaturePad 
+                    onSave={(signatureUrl) => setPodEvidence({...podEvidence, signature: signatureUrl})}
+                    onClear={() => setPodEvidence({...podEvidence, signature: ''})}
+                  />
+                </div>
+              </div>
+
+              <button 
+                type="submit" 
+                disabled={isCapturing || !podEvidence.signature}
+                className="w-full bg-secondary-900 hover:bg-black disabled:bg-slate-300 disabled:text-slate-500 text-white font-black py-4 rounded-2xl shadow-xl transition-all disabled:shadow-none flex items-center justify-center gap-2 uppercase tracking-widest text-sm"
+              >
+                {isCapturing ? (
+                  <><Loader2 className="animate-spin" size={20} /> Procesando...</>
+                ) : (
+                  <><CheckCircle2 size={20} /> Finalizar</>
+                )}
+              </button>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

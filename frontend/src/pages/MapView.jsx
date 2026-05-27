@@ -47,11 +47,10 @@ const RecenterMap = ({ center }) => {
   return null;
 };
 
-// ── Componente principal ─────────────────────────────────────────
 const MapView = ({ user }) => {
   const [drivers, setDrivers]             = useState([]);
   const [selectedDriver, setSelectedDriver] = useState(null);
-  const [mapCenter, setMapCenter]         = useState([40.7128, -74.006]);
+  const [mapCenter, setMapCenter]         = useState([-12.0464, -77.0428]);
   const [loading, setLoading]             = useState(true);
   const [routeHistory, setRouteHistory]   = useState([]);  // [[lat,lng], ...]
   const [drawerOpen, setDrawerOpen]       = useState(false);

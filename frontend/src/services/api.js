@@ -180,8 +180,9 @@ export const usersApi = {
 
 export const driverApi = {
   getMyOrders: () => api.get('/driver/my-orders'),
-  updateOrderStatus: (orderId, status, location) =>
-    api.patch(`/driver/orders/${orderId}/status`, { status, location }),
+  updateOrderStatus: (orderId, status, payload) =>
+    api.patch(`/driver/orders/${orderId}/status`, { status, ...payload }),
+  optimizeRoute: () => api.post('/driver/optimize-route'),
 };
 
 export { getSession, saveSession, clearSession };

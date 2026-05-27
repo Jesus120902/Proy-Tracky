@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { ordersApi, driversApi } from '../services/api';
 import { StatusBadge, PriorityBadge } from '../components/Badges';
-import { Plus, Search, Filter, Edit2, Trash2, Eye, X, Check, Truck, MapPin, Package, Clock, User, ChevronDown } from 'lucide-react';
+import { Plus, Search, Filter, Edit2, Trash2, Eye, X, Check, Truck, MapPin, Package, Clock, User, ChevronDown, CheckCircle2 } from 'lucide-react';
 import { useToast } from '../components/Toast';
 import ConfirmModal from '../components/ConfirmModal';
 
@@ -27,8 +27,47 @@ const Orders = () => {
     address: '',
     priority: 'medium',
     items: '',
-    status: 'pending'
+    status: 'pending',
+    coordinates: { lat: null, lng: null }
   });
+
+  const [geocodingLoading, setGeocodingLoading] = useState(false);
+
+  const handleGeocodeAddress = async () => {
+    if (!formData.address.trim()) {
+      addToast("Por favor ingresa una dirección primero", "warning");
+      return;
+    }
+    setGeocodingLoading(true);
+    try {
+      const response = await fetch(
+        `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(
+          formData.address
+        )}&limit=1`,
+        {
+          headers: {
+            "User-Agent": "TrackyLogisticsApp/1.0"
+          }
+        }
+      );
+      const data = await response.json();
+      if (data && data.length > 0) {
+        const { lat, lon } = data[0];
+        setFormData(prev => ({
+          ...prev,
+          coordinates: { lat: parseFloat(lat), lng: parseFloat(lon) }
+        }));
+        addToast(`Dirección geolocalizada con éxito: ${parseFloat(lat).toFixed(5)}, ${parseFloat(lon).toFixed(5)}`, "success");
+      } else {
+        addToast("No se pudo encontrar las coordenadas para esta dirección. Intenta detallar la ciudad y país.", "warning");
+      }
+    } catch (err) {
+      console.error(err);
+      addToast("Error al conectar con el servicio de geolocalización", "error");
+    } finally {
+      setGeocodingLoading(false);
+    }
+  };
 
   // Paginación y Filtrado backend
   const [page, setPage] = useState(1);
@@ -67,7 +106,8 @@ const Orders = () => {
       const payload = {
         customer: {
           name: formData.customerName,
-          address: formData.address
+          address: formData.address,
+          coordinates: formData.coordinates || { lat: null, lng: null }
         },
         priority: formData.priority,
         items: formData.items,
@@ -90,7 +130,7 @@ const Orders = () => {
   };
 
   const resetForm = () => {
-    setFormData({ customerName: '', address: '', priority: 'medium', items: '', status: 'pending' });
+    setFormData({ customerName: '', address: '', priority: 'medium', items: '', status: 'pending', coordinates: { lat: null, lng: null } });
   };
 
   const handleEditClick = (order) => {
@@ -100,7 +140,8 @@ const Orders = () => {
       address: order.customer.address,
       priority: order.priority,
       items: order.items || '',
-      status: order.status
+      status: order.status,
+      coordinates: order.customer.coordinates || { lat: null, lng: null }
     });
   };
 
@@ -355,14 +396,32 @@ const Orders = () => {
                     </div>
                    
                    <div className="space-y-2">
-                      <label className="text-[10px] font-black uppercase tracking-widest text-secondary-400 ml-1">Dirección de Entrega</label>
-                      <input 
-                        required
-                        type="text" 
-                        className="w-full bg-secondary-50 border-none rounded-2xl p-4 focus:ring-4 focus:ring-primary-500/10 outline-none transition-all shadow-inner"
-                        value={formData.address}
-                        onChange={(e) => setFormData({...formData, address: e.target.value})}
-                      />
+                      <div className="flex justify-between items-center">
+                        <label className="text-[10px] font-black uppercase tracking-widest text-secondary-400 ml-1">Dirección de Entrega</label>
+                        {formData.coordinates?.lat && (
+                          <span className="text-[9px] font-bold text-green-600 bg-green-50 px-2 py-0.5 rounded-lg">
+                            📍 Localizado ({formData.coordinates.lat.toFixed(4)}, {formData.coordinates.lng.toFixed(4)})
+                          </span>
+                        )}
+                      </div>
+                      <div className="flex gap-2">
+                        <input 
+                          required
+                          type="text" 
+                          placeholder="Calle, Ciudad, País..."
+                          className="flex-1 bg-secondary-50 border-none rounded-2xl p-4 focus:ring-4 focus:ring-primary-500/10 outline-none transition-all shadow-inner"
+                          value={formData.address}
+                          onChange={(e) => setFormData({...formData, address: e.target.value})}
+                        />
+                        <button
+                          type="button"
+                          disabled={geocodingLoading}
+                          onClick={handleGeocodeAddress}
+                          className="bg-secondary-900 hover:bg-black disabled:bg-slate-200 disabled:text-slate-400 text-white text-[10px] font-black uppercase tracking-widest px-4 rounded-2xl transition-all"
+                        >
+                          {geocodingLoading ? "Buscando..." : "Localizar"}
+                        </button>
+                      </div>
                    </div>
 
                    <div className="grid grid-cols-2 gap-4">
