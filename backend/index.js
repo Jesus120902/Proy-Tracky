@@ -17,6 +17,8 @@ const driversRouter = require('./routes/drivers');
 const authRouter = require('./routes/auth');
 const companiesRouter = require('./routes/companies');
 const statsRouter = require('./routes/stats');
+const publicAuthRouter = require('./routes/publicAuth');
+const billingRouter = require('./routes/billing');
 const errorHandler = require('./middleware/errorHandler');
 
 const app = express();
@@ -79,6 +81,8 @@ app.use('/api/orders', ordersRouter);
 app.use('/api/drivers', driversRouter);
 app.use('/api/driver', require('./routes/driverPortal'));
 app.use('/api/users', require('./routes/users')); // Nueva ruta para gestión de cuentas
+app.use('/api/publicAuth', publicAuthRouter);
+app.use('/api/billing', billingRouter);
 
 // Error Handling
 app.use(errorHandler);

@@ -22,7 +22,14 @@ const companySchema = new mongoose.Schema({
   },
   settings: {
     maxDrivers: { type: Number, default: 10 },
-    plan: { type: String, enum: ['free', 'premium', 'enterprise'], default: 'free' },
+  },
+  subscription: {
+    plan: { type: String, enum: ['free', 'pro', 'business'], default: 'free' },
+    status: { type: String, enum: ['active', 'canceled', 'past_due', 'trialing'], default: 'trialing' },
+    startDate: { type: Date, default: Date.now },
+    endDate: { type: Date },
+    mpSubscriptionId: { type: String, default: null },
+    mpCustomerId: { type: String, default: null }
   },
   active: {
     type: Boolean,

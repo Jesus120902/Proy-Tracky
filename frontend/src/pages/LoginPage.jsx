@@ -32,13 +32,12 @@ const LoginPage = ({ onLogin }) => {
       <div className="w-full max-w-md animate-in zoom-in-95 duration-700 relative z-10">
         <div className="bg-white/10 backdrop-blur-xl border border-white/20 p-8 rounded-[2.5rem] shadow-2xl">
           <div className="flex flex-col items-center mb-10">
-            <div className="w-24 h-24 flex items-center justify-center mb-6 group transition-transform hover:scale-110 overflow-hidden">
-               <img src="/logo.png" alt="Tracky Logo" className="w-full h-full object-contain" onError={(e) => { e.target.style.display='none'; e.target.nextSibling.style.display='flex'; }} />
-               <div style={{display: 'none'}} className="w-full h-full bg-primary-600 rounded-[2rem] flex items-center justify-center text-white shadow-2xl shadow-primary-500/50">
+            <div className="h-32 w-auto flex items-center justify-center mb-4 group transition-transform hover:scale-110">
+               <img src="/logo.png" alt="Tracky Logo" className="h-full w-auto object-contain" onError={(e) => { e.target.style.display='none'; e.target.nextSibling.style.display='flex'; }} />
+               <div style={{display: 'none'}} className="w-24 h-24 bg-primary-600 rounded-[2rem] flex items-center justify-center text-white shadow-2xl shadow-primary-500/50">
                  <Truck size={40} />
                </div>
             </div>
-            <h1 className="text-4xl font-black text-white tracking-tight">Tracky</h1>
             <p className="text-secondary-400 mt-2 font-black uppercase text-[10px] tracking-[0.3em]">Logística Inteligente SaaS</p>
           </div>
 

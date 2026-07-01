@@ -12,6 +12,9 @@ import Reports from './pages/Reports';
 import Settings from './pages/Settings';
 import DriverHome from './pages/DriverHome';
 import UserManagement from './pages/UserManagement';
+import LandingPage from './pages/LandingPage';
+import RegisterPage from './pages/RegisterPage';
+import ClientPortal from './pages/ClientPortal';
 import { ToastProvider, useToast } from './components/Toast';
 import { clearSession } from './services/api';
 
@@ -54,9 +57,12 @@ const AppContent = () => {
     return (
       <Router>
         <Routes>
+          <Route path="/" element={<LandingPage />} />
+          <Route path="/login" element={<LoginPage onLogin={loginHandler} />} />
+          <Route path="/register" element={<RegisterPage />} />
           <Route path="/track" element={<PublicTracking />} />
           <Route path="/track/:id" element={<PublicTracking />} />
-          <Route path="*" element={<LoginPage onLogin={loginHandler} />} />
+          <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </Router>
     );
@@ -91,6 +97,8 @@ const AppContent = () => {
           <Layout user={userInfo} onLogout={logoutHandler}>
             <Routes>
               <Route path="/" element={<Dashboard user={userInfo} />} />
+              <Route path="/dashboard" element={<Dashboard user={userInfo} />} />
+              <Route path="/portal" element={<ClientPortal user={userInfo} />} />
               <Route path="/orders" element={<Orders user={userInfo} />} />
               <Route path="/drivers" element={<Drivers user={userInfo} />} />
               <Route path="/map" element={<MapView user={userInfo} />} />

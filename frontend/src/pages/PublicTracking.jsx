@@ -148,10 +148,7 @@ const PublicTracking = () => {
       {/* Header Público */}
       <header className="bg-white border-b border-slate-200 px-6 py-4 flex items-center justify-between sticky top-0 z-50 shadow-sm">
         <div className="flex items-center gap-2">
-          <div className="bg-primary-600 p-2 rounded-xl text-white">
-            <Truck size={24} />
-          </div>
-          <span className="text-xl font-black tracking-tighter">TRACKY <span className="text-primary-600">LIVE</span></span>
+          <img src="/logo.png" alt="Tracky Logo" className="h-10 w-auto object-contain" />
         </div>
         <Link to="/" className="text-xs font-black uppercase tracking-widest text-slate-400 hover:text-primary-600 transition-colors flex items-center gap-1">
           <ArrowLeft size={14} /> Volver al Inicio

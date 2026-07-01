@@ -14,6 +14,7 @@ import {
   ChevronRight,
   ShieldAlert,
   Users,
+  CreditCard
 } from 'lucide-react';
 import useSocket from '../hooks/useSocket';
 import {
@@ -130,13 +131,12 @@ const Layout = ({ children, user, onLogout }) => {
   ];
 
   if (user.role === 'admin' || user.role === 'superadmin') {
+    menuItems.push({ icon: CreditCard, label: 'Portal SaaS', path: '/portal' });
     menuItems.push({ icon: SettingsIcon, label: 'Configuración', path: '/settings' });
+    menuItems.push({ icon: Users, label: 'Cuentas & Staff', path: '/users' });
   }
   if (user.role === 'superadmin') {
-    menuItems.push({ icon: ShieldAlert, label: 'Empresas SaaS', path: '/companies' });
-  }
-  if (user.role === 'superadmin' || user.role === 'admin') {
-    menuItems.push({ icon: Users, label: 'Cuentas & Staff', path: '/users' });
+    menuItems.push({ icon: ShieldAlert, label: 'Admin SaaS', path: '/companies' });
   }
 
   // Socket.io: conectar a la sala de la empresa
