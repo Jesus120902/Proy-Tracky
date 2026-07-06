@@ -1,34 +1,46 @@
 const express = require('express');
 const router = express.Router();
-const User = require('../models/User');
+const { User } = require('../models/associations');
 const { protect, authorize } = require('../middleware/authMiddleware');
 
 // Proteger todas las rutas de usuarios
 router.use(protect);
 
-// @desc    Get all users (Superadmin sees all, Admin sees their company only)
+// Helper: serializar usuario
+const serializeUser = (user) => ({
+  _id: user.id,
+  name: user.name,
+  email: user.email,
+  role: user.role,
+  company: user.companyId,
+  active: user.active,
+  createdAt: user.createdAt,
+  updatedAt: user.updatedAt,
+});
+
+// @desc    Get all users
 // @route   GET /api/users
 router.get('/', async (req, res, next) => {
   try {
-    const filter = req.user.role === 'superadmin' ? {} : { company: req.user.company };
-    const users = await User.find(filter).populate('company', 'name');
-    res.json(users);
+    const where = req.user.role === 'superadmin' ? {} : { companyId: req.user.company };
+    const users = await User.findAll({ where });
+    res.json(users.map(serializeUser));
   } catch (err) {
     next(err);
   }
 });
 
-// @desc    Create a new user (Admin or Superadmin)
+// @desc    Create a new user
 // @route   POST /api/users
 router.post('/', async (req, res, next) => {
   const { name, email, password, role, companyId } = req.body;
 
   try {
-    // Si no es superadmin, forzar que el usuario pertenezca a su propia empresa
-    const targetCompany = req.user.role === 'superadmin' ? companyId : req.user.company;
+    const targetCompany =
+      req.user.role === 'superadmin' ? companyId : req.user.company;
 
-    const userExists = await User.findOne({ email });
-    if (userExists) {
+    const exists = await User.findOne({ where: { email } });
+    if (exists) {
       res.status(400);
       throw new Error('El usuario ya existe');
     }
@@ -38,16 +50,10 @@ router.post('/', async (req, res, next) => {
       email,
       password,
       role,
-      company: targetCompany
+      companyId: targetCompany,
     });
 
-    res.status(201).json({
-      _id: user._id,
-      name: user.name,
-      email: user.email,
-      role: user.role,
-      company: user.company
-    });
+    res.status(201).json(serializeUser(user));
   } catch (err) {
     next(err);
   }
@@ -57,19 +63,21 @@ router.post('/', async (req, res, next) => {
 // @route   DELETE /api/users/:id
 router.delete('/:id', authorize('superadmin', 'admin'), async (req, res, next) => {
   try {
-    const user = await User.findById(req.params.id);
+    const user = await User.findByPk(req.params.id);
     if (!user) {
       res.status(404);
       throw new Error('Usuario no encontrado');
     }
 
-    // Seguridad: Admin solo borra usuarios de su empresa
-    if (req.user.role === 'admin' && user.company.toString() !== req.user.company.toString()) {
+    if (
+      req.user.role === 'admin' &&
+      user.companyId !== req.user.company
+    ) {
       res.status(403);
       throw new Error('No autorizado para borrar este usuario');
     }
 
-    await User.deleteOne({ _id: req.params.id });
+    await user.destroy();
     res.json({ message: 'Usuario eliminado' });
   } catch (err) {
     next(err);

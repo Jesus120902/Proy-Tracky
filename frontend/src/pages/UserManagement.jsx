@@ -30,13 +30,14 @@ const UserManagement = ({ user: currentUser }) => {
     email: '',
     password: '',
     role: 'driver',
-    companyId: currentUser.company?._id || ''
+    companyId: currentUser.company?.id || currentUser.company?._id || ''
   });
 
   const fetchData = async () => {
     try {
-      const { data } = await usersApi.getAll();
-      setUsers(data);
+      const companyId = currentUser.company?.id || currentUser.company?._id || currentUser.company;
+      const data = await usersApi.getAll(companyId);
+      setUsers(data || []);
       
       // Si es superadmin, cargar lista de empresas para el select
       if (currentUser.role === 'superadmin') {
@@ -64,7 +65,7 @@ const UserManagement = ({ user: currentUser }) => {
       setFormData({ 
         name: '', email: '', password: '', 
         role: 'driver', 
-        companyId: currentUser.company?._id || '' 
+        companyId: currentUser.company?.id || currentUser.company?._id || '' 
       });
     } catch (err) {
       addToast(err.response?.data?.message || 'Error al crear usuario', 'error');
@@ -73,7 +74,7 @@ const UserManagement = ({ user: currentUser }) => {
 
   const handleDelete = async () => {
     try {
-      await usersApi.delete(selectedUser._id);
+      await usersApi.delete(selectedUser.id || selectedUser._id);
       addToast('Usuario eliminado', 'success');
       fetchData();
     } catch (err) {
@@ -119,7 +120,7 @@ const UserManagement = ({ user: currentUser }) => {
               </thead>
               <tbody className="divide-y divide-slate-50">
                 {users.map(u => (
-                  <tr key={u._id} className="hover:bg-slate-50/50 transition-colors group">
+                  <tr key={u.id || u._id} className="hover:bg-slate-50/50 transition-colors group">
                     <td className="px-8 py-6">
                        <div className="flex items-center gap-4">
                           <div className="w-10 h-10 rounded-xl bg-slate-100 flex items-center justify-center text-primary-600 font-black">
@@ -152,7 +153,7 @@ const UserManagement = ({ user: currentUser }) => {
                        </div>
                     </td>
                     <td className="px-8 py-6 text-right">
-                       {u._id !== currentUser._id && (
+                       {(u.id || u._id) !== (currentUser.id || currentUser._id) && (
                          <button 
                            onClick={() => { setSelectedUser(u); setIsConfirmOpen(true); }}
                            className="p-3 text-slate-300 hover:text-red-500 hover:bg-red-50 rounded-xl transition-all opacity-0 group-hover:opacity-100"
@@ -236,7 +237,7 @@ const UserManagement = ({ user: currentUser }) => {
                          <option value="">-- Seleccionar Empresa --</option>
                          <option value="plataforma">Software Central (Tracky)</option>
                          {companies.map(c => (
-                           <option key={c._id} value={c._id}>{c.name}</option>
+                           <option key={c.id || c._id} value={c.id || c._id}>{c.name}</option>
                          ))}
                       </select>
                    </div>

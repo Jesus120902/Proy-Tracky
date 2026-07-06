@@ -6,7 +6,7 @@ import {
   Truck, MapPin, Navigation, Package, User, Clock,
   X, Calendar, Activity, ChevronRight, Route, History
 } from 'lucide-react';
-import useSocket from '../hooks/useSocket';
+import { useDriverLocations } from '../hooks/useRealtimeDrivers';
 import RouteHistoryDrawer from '../components/RouteHistoryDrawer';
 
 // ── Fix iconos Leaflet ────────────────────────────────────────────
@@ -68,22 +68,38 @@ const MapView = ({ user }) => {
   const [routeHistory, setRouteHistory]   = useState([]);  // [[lat,lng], ...]
   const [drawerOpen, setDrawerOpen]       = useState(false);
 
-  const companyId  = user?.company?._id || user?.company;
-  const { on, off } = useSocket(companyId);
+  const companyId = user?.company?.id || user?.company?._id || user?.company;
+
+  // ── Realtime Database: escuchar ubicaciones GPS en tiempo real ───
+  useDriverLocations(companyId, useCallback((realtimeDrivers) => {
+    setDrivers(prev => prev.map(d => {
+      const rt = realtimeDrivers[d.id || d._id];
+      if (!rt) return d;
+      return { 
+        ...d, 
+        locationLat: rt.lat, 
+        locationLng: rt.lng, 
+        status: rt.status || d.status 
+      };
+    }));
+  }, []));
 
   // ── Cargar datos iniciales ────────────────────────────────────
   const fetchInitialData = useCallback(async () => {
     try {
-      const [dRes, oRes] = await Promise.all([
-        driversApi.getAll(),
-        ordersApi.getAll(),
-      ]);
-      const activeOrders = oRes.data.orders.filter(o =>
+      const dRes = await driversApi.getAll(companyId);
+      const oRes = await ordersApi.getAll({ companyId });
+      
+      const driversList = dRes.data || dRes || [];
+      const ordersList = oRes.data?.orders || oRes || [];
+
+      const activeOrders = ordersList.filter(o =>
         ['assigned', 'in-transit'].includes(o.status)
       );
-      const driversWithOrders = dRes.data.map(d => ({
+
+      const driversWithOrders = driversList.map(d => ({
         ...d,
-        activeOrder: activeOrders.find(o => o.driver?._id === d._id),
+        activeOrder: activeOrders.find(o => o.driverId === (d.id || d._id)),
       }));
       setDrivers(driversWithOrders);
     } catch (err) {
@@ -91,7 +107,7 @@ const MapView = ({ user }) => {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [companyId]);
 
   useEffect(() => {
     fetchInitialData();
@@ -99,27 +115,12 @@ const MapView = ({ user }) => {
     return () => clearInterval(syncInterval);
   }, [fetchInitialData]);
 
-  // ── Escuchar actualizaciones GPS en tiempo real ───────────────
-  useEffect(() => {
-    on('driver_location_update', (data) => {
-      setDrivers(prev =>
-        prev.map(d =>
-          d._id === data.driverId ? { ...d, location: data.location } : d
-        )
-      );
-      // Si el drawer está abierto y es este conductor, añadir punto al trace
-      if (drawerOpen && selectedDriver?._id === data.driverId) {
-        setRouteHistory(prev => [...prev, [data.location.lat, data.location.lng]]);
-      }
-    });
-
-    return () => off('driver_location_update');
-  }, [on, off, selectedDriver, drawerOpen]);
-
   // ── Seleccionar conductor y centrar el mapa ───────────────────
   const handleSelectDriver = (driver) => {
     setSelectedDriver(driver);
-    setMapCenter([driver.location.lat, driver.location.lng]);
+    const lat = driver.locationLat || (driver.location && driver.location.lat) || -12.0464;
+    const lng = driver.locationLng || (driver.location && driver.location.lng) || -77.0428;
+    setMapCenter([lat, lng]);
     setRouteHistory([]);
   };
 
@@ -195,19 +196,17 @@ const MapView = ({ user }) => {
             ) : (
               activeDrivers.map(driver => (
                 <div
-                  key={driver._id}
-                  className={`p-3 rounded-2xl border transition-all ${
-                    selectedDriver?._id === driver._id
-                      ? 'bg-primary-600 border-primary-500 text-white shadow-xl shadow-primary-500/30'
-                      : 'bg-white border-slate-100 hover:border-primary-100 hover:bg-primary-50'
+                  key={driver.id || driver._id}
+                  onClick={() => handleSelectDriver(driver)}
+                  className={`w-full p-4 rounded-2xl flex flex-col gap-3 transition-all duration-300 relative group border cursor-pointer ${
+                    (selectedDriver?.id || selectedDriver?._id) === (driver.id || driver._id)
+                      ? 'bg-primary-600 text-white border-primary-500 shadow-xl shadow-primary-900/10'
+                      : 'bg-white hover:bg-slate-50 border-slate-100 text-slate-700 shadow-sm'
                   }`}
                 >
-                  <button
-                    onClick={() => handleSelectDriver(driver)}
-                    className="w-full flex items-center gap-3 text-left"
-                  >
+                  <div className="flex items-center gap-3">
                     <div className={`w-10 h-10 rounded-xl flex items-center justify-center font-black text-sm flex-shrink-0 ${
-                      selectedDriver?._id === driver._id
+                      (selectedDriver?.id || selectedDriver?._id) === (driver.id || driver._id)
                         ? 'bg-white/20 text-white'
                         : 'bg-primary-100 text-primary-700'
                     }`}>
@@ -215,12 +214,12 @@ const MapView = ({ user }) => {
                     </div>
                     <div className="min-w-0 flex-1">
                       <p className={`font-black truncate text-sm leading-none ${
-                        selectedDriver?._id === driver._id ? 'text-white' : 'text-secondary-900'
+                        (selectedDriver?.id || selectedDriver?._id) === (driver.id || driver._id) ? 'text-white' : 'text-secondary-900'
                       }`}>
                         {driver.name}
                       </p>
-                      <p className={`text-[10px] mt-1 flex items-center gap-1 font-bold ${
-                        selectedDriver?._id === driver._id ? 'text-white/70' : 'text-primary-600'
+                      <p className={`text-[10px] mt-1.5 flex items-center gap-1 font-bold ${
+                        (selectedDriver?.id || selectedDriver?._id) === (driver.id || driver._id) ? 'text-white/70' : 'text-primary-600'
                       }`}>
                         <Package size={10} />
                         {driver.activeOrder?.orderNumber || 'SIN ORDEN'}
@@ -229,22 +228,24 @@ const MapView = ({ user }) => {
                     <ChevronRight
                       size={14}
                       className={`transition-transform flex-shrink-0 ${
-                        selectedDriver?._id === driver._id ? 'opacity-100 translate-x-1 text-white' : 'opacity-0'
+                        (selectedDriver?.id || selectedDriver?._id) === (driver.id || driver._id) ? 'opacity-100 translate-x-1 text-white' : 'opacity-0'
                       }`}
                     />
-                  </button>
+                  </div>
 
-                  {/* Botón historial */}
                   <button
-                    onClick={() => handleOpenHistory(driver)}
-                    className={`mt-2 w-full flex items-center justify-center gap-2 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${
-                      selectedDriver?._id === driver._id
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleOpenHistory(driver);
+                    }}
+                    className={`w-full flex items-center justify-center gap-2 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${
+                      (selectedDriver?.id || selectedDriver?._id) === (driver.id || driver._id)
                         ? 'bg-white/10 hover:bg-white/20 text-white border border-white/20'
                         : 'bg-slate-50 hover:bg-primary-50 text-slate-500 hover:text-primary-600'
                     }`}
                   >
                     <History size={12} />
-                    Ver historial de ruta
+                    Ver historial
                   </button>
                 </div>
               ))
@@ -260,7 +261,7 @@ const MapView = ({ user }) => {
               <div className="space-y-1">
                 {drivers.filter(d => d.status !== 'on-delivery').map(driver => (
                   <button
-                    key={driver._id}
+                    key={driver.id || driver._id}
                     onClick={() => handleOpenHistory(driver)}
                     className="w-full flex items-center gap-3 p-2 rounded-xl hover:bg-slate-50 transition-all text-left"
                   >
@@ -343,7 +344,7 @@ const MapView = ({ user }) => {
             {/* Marcadores de conductores */}
             {drivers.map(driver => (
               <Marker
-                key={driver._id}
+                key={driver.id || driver._id}
                 position={[driver.location.lat, driver.location.lng]}
                 icon={driverIcon[driver.status] || driverIcon.offline}
                 opacity={driver.status === 'offline' ? 0.4 : 1}

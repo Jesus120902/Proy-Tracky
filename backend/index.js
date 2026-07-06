@@ -2,16 +2,16 @@ require('dotenv').config();
 const express = require('express');
 const http = require('http');
 const { Server } = require('socket.io');
-const mongoose = require('mongoose');
 const cors = require('cors');
 const helmet = require('helmet');
+const path = require('path');
 
-// Modelos (Cargar antes que las rutas)
-require('./models/Company');
-require('./models/User');
-require('./models/Order');
-require('./models/Driver');
+// ── Base de datos (PostgreSQL / Sequelize) ──────────────────────────
+const sequelize = require('./db');
+// Cargar asociaciones (debe ser ANTES de sync y de las rutas)
+const { Driver, Order, LocationHistory } = require('./models/associations');
 
+// ── Rutas ────────────────────────────────────────────────────────────
 const ordersRouter = require('./routes/orders');
 const driversRouter = require('./routes/drivers');
 const authRouter = require('./routes/auth');
@@ -19,80 +19,75 @@ const companiesRouter = require('./routes/companies');
 const statsRouter = require('./routes/stats');
 const publicAuthRouter = require('./routes/publicAuth');
 const billingRouter = require('./routes/billing');
+const usersRouter = require('./routes/users');
+const driverPortalRouter = require('./routes/driverPortal');
 const errorHandler = require('./middleware/errorHandler');
 
 const app = express();
 const server = http.createServer(app);
 
-// Configuración de Socket.io
+// ── Socket.io ─────────────────────────────────────────────────────────
 const io = new Server(server, {
-  cors: {
-    origin: "*",
-    methods: ["GET", "POST"]
-  }
+  cors: { origin: '*', methods: ['GET', 'POST'] },
 });
 
-// Adjuntar io a la petición para usarlo en las rutas
 app.use((req, res, next) => {
   req.io = io;
   next();
 });
 
-// Middleware
+// ── Middlewares ────────────────────────────────────────────────────────
 app.use(helmet());
 
-const allowedOrigin = process.env.NODE_ENV === 'production' 
-  ? (process.env.FRONTEND_URL || 'http://localhost') 
-  : '*';
+const allowedOrigin =
+  process.env.NODE_ENV === 'production'
+    ? process.env.FRONTEND_URL || 'http://localhost'
+    : '*';
 
-app.use(cors({
-  origin: allowedOrigin,
-  methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
-  credentials: true
-}));
+app.use(
+  cors({
+    origin: allowedOrigin,
+    methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
+    credentials: true,
+  })
+);
 
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ limit: '50mb', extended: true }));
 
 // Servir archivos subidos (firmas y fotos)
-const path = require('path');
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
-// Configurar Rate Limiters
+// ── Rate Limiting ──────────────────────────────────────────────────────
 const { createRateLimiter } = require('./middleware/rateLimiter');
-const globalLimiter = createRateLimiter({
-  windowMs: 15 * 60 * 1000,
-  max: 300
-});
+const globalLimiter = createRateLimiter({ windowMs: 15 * 60 * 1000, max: 300 });
 const authLimiter = createRateLimiter({
   windowMs: 15 * 60 * 1000,
   max: 50,
-  message: 'Demasiados intentos de acceso desde esta IP. Por favor intenta nuevamente en 15 minutos.'
+  message: 'Demasiados intentos de acceso desde esta IP. Por favor intenta nuevamente en 15 minutos.',
 });
 
 app.use('/api', globalLimiter);
 app.use('/api/auth/login', authLimiter);
 
-// Routes
+// ── Rutas API ─────────────────────────────────────────────────────────
 app.use('/api/auth', authRouter);
 app.use('/api/companies', companiesRouter);
 app.use('/api/stats', statsRouter);
 app.use('/api/orders', ordersRouter);
 app.use('/api/drivers', driversRouter);
-app.use('/api/driver', require('./routes/driverPortal'));
-app.use('/api/users', require('./routes/users')); // Nueva ruta para gestión de cuentas
+app.use('/api/driver', driverPortalRouter);
+app.use('/api/users', usersRouter);
 app.use('/api/publicAuth', publicAuthRouter);
 app.use('/api/billing', billingRouter);
 
-// Error Handling
+// ── Error Handler ─────────────────────────────────────────────────────
 app.use(errorHandler);
 
-// Socket.io Logic
-const LocationHistory = require('./models/LocationHistory');
-
-// Fórmula Haversine para calcular distancia en metros entre dos puntos GPS
+// ── Socket.io: Lógica en tiempo real ──────────────────────────────────
+// Fórmula Haversine para calcular distancia en metros
 const haversineDistanceMeters = (lat1, lon1, lat2, lon2) => {
-  const R = 6371e3; // Radio de la Tierra en metros
+  const R = 6371e3;
   const dLat = ((lat2 - lat1) * Math.PI) / 180;
   const dLon = ((lon2 - lon1) * Math.PI) / 180;
   const a =
@@ -105,7 +100,6 @@ const haversineDistanceMeters = (lat1, lon1, lat2, lon2) => {
   return R * c;
 };
 
-// Registro de alertas geocercadas enviadas para evitar SPAM
 const geofenceAlertsCache = {};
 
 io.on('connection', (socket) => {
@@ -118,59 +112,47 @@ io.on('connection', (socket) => {
   });
 
   socket.on('driver_location_update', async (data) => {
-    // console.log(`📍 Ubicación recibida de Driver ${data.driverId}:`, data.location);
     if (socket.companyId) {
       io.to(socket.companyId).emit('driver_location_update', data);
-      
-      // Actualizar la ubicación actual del conductor en el modelo Driver
+
+      // Actualizar ubicación actual del conductor en PostgreSQL
       try {
-        const Driver = require('./models/Driver');
-        await Driver.findByIdAndUpdate(data.driverId, {
-          location: { lat: data.location.lat, lng: data.location.lng }
-        });
+        await Driver.update(
+          { locationLat: data.location.lat, locationLng: data.location.lng },
+          { where: { id: data.driverId } }
+        );
       } catch (err) {
         console.error('Error actualizando ubicación de conductor en DB:', err);
       }
-      
-      // Lógica de Geocercas (Geofencing) reactiva
+
+      // Lógica de Geocercas
       try {
-        const Order = require('./models/Order');
-        const activeOrders = await Order.find({
-          driver: data.driverId,
-          status: 'in-transit'
+        const activeOrders = await Order.findAll({
+          where: { driverId: data.driverId, status: 'in-transit' },
         });
 
         for (const order of activeOrders) {
-          if (
-            order.customer &&
-            order.customer.coordinates &&
-            order.customer.coordinates.lat &&
-            order.customer.coordinates.lng
-          ) {
+          if (order.customerLat && order.customerLng) {
             const distance = haversineDistanceMeters(
               data.location.lat,
               data.location.lng,
-              order.customer.coordinates.lat,
-              order.customer.coordinates.lng
+              order.customerLat,
+              order.customerLng
             );
 
-            // Si entra en rango de 50 metros y no se le alertó en los últimos 5 minutos
             if (distance < 50) {
-              const cacheKey = `${order._id}`;
+              const cacheKey = `${order.id}`;
               const now = Date.now();
-              
-              if (!geofenceAlertsCache[cacheKey] || (now - geofenceAlertsCache[cacheKey]) > 5 * 60 * 1000) {
+              if (!geofenceAlertsCache[cacheKey] || now - geofenceAlertsCache[cacheKey] > 5 * 60 * 1000) {
                 geofenceAlertsCache[cacheKey] = now;
-                
                 io.to(socket.companyId).emit('driver_arrived', {
-                  orderId: order._id,
+                  orderId: order.id,
                   orderNumber: order.orderNumber,
                   driverId: data.driverId,
-                  distance: Math.round(distance)
+                  distance: Math.round(distance),
                 });
-                
                 const logger = require('./utils/logger');
-                logger.info(`🚨 Geocerca: Driver ${data.driverId} ha llegado a destino de orden ${order.orderNumber} (distancia: ${Math.round(distance)}m)`);
+                logger.info(`🚨 Geocerca: Driver ${data.driverId} llegó a destino de orden ${order.orderNumber} (${Math.round(distance)}m)`);
               }
             }
           }
@@ -179,33 +161,34 @@ io.on('connection', (socket) => {
         console.error('Error calculando geocerca:', err);
       }
 
-      // Guardar en historial de forma "limpia"
+      // Guardar en historial de ubicación
       try {
-        const today = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Lima', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date());
+        const today = new Intl.DateTimeFormat('en-CA', {
+          timeZone: 'America/Lima',
+          year: 'numeric', month: '2-digit', day: '2-digit',
+        }).format(new Date());
+
         const point = { lat: data.location.lat, lng: data.location.lng, timestamp: new Date() };
-        
-        // Buscamos si ya existe el documento de hoy para este conductor
-        let history = await LocationHistory.findOne({ driver: data.driverId, date: today });
-        
-        if (!history) {
-          await LocationHistory.create({
-            driver: data.driverId,
-            company: socket.companyId,
+
+        const [history, created] = await LocationHistory.findOrCreate({
+          where: { driverId: data.driverId, date: today },
+          defaults: {
+            driverId: data.driverId,
+            companyId: socket.companyId,
             date: today,
-            path: [point]
-          });
-        } else {
-          // Lógica "limpia": Solo añadir si el último punto está a más de ~20 metros 
-          // o si han pasado más de 30 segundos (simplificado)
-          const lastPoint = history.path[history.path.length - 1];
-          const distance = Math.sqrt(
-            Math.pow(point.lat - lastPoint.lat, 2) + 
-            Math.pow(point.lng - lastPoint.lng, 2)
-          );
-          
-          // 0.0002 en lat/lng es aprox 20-25 metros
-          if (distance > 0.0002) {
-            history.path.push(point);
+            path: [point],
+          },
+        });
+
+        if (!created) {
+          const currentPath = history.path || [];
+          const lastPoint = currentPath[currentPath.length - 1];
+          const dist = lastPoint
+            ? Math.sqrt(Math.pow(point.lat - lastPoint.lat, 2) + Math.pow(point.lng - lastPoint.lng, 2))
+            : 1;
+
+          if (dist > 0.0002) {
+            history.path = [...currentPath, point];
             await history.save();
           }
         }
@@ -220,11 +203,23 @@ io.on('connection', (socket) => {
   });
 });
 
-// Database Connection
-mongoose
-  .connect(process.env.MONGO_URI || 'mongodb://localhost:27017/tracky')
-  .then(() => console.log('✅ MongoDB connected'))
-  .catch((err) => console.log('❌ MongoDB error:', err));
-
+// ── Conectar a PostgreSQL y sincronizar tablas ────────────────────────
 const PORT = process.env.PORT || 5000;
-server.listen(PORT, () => console.log(`🚀 Tracky API & Real-time running on http://localhost:${PORT}`));
+
+sequelize
+  .authenticate()
+  .then(() => {
+    console.log('✅ PostgreSQL conectado');
+    // alter: true actualiza columnas sin borrar datos (usar migrate en producción real)
+    return sequelize.sync({ alter: process.env.NODE_ENV !== 'production' });
+  })
+  .then(() => {
+    console.log('✅ Tablas sincronizadas');
+    server.listen(PORT, () =>
+      console.log(`🚀 Tracky API & Real-time corriendo en http://localhost:${PORT}`)
+    );
+  })
+  .catch((err) => {
+    console.error('❌ Error al conectar a PostgreSQL:', err);
+    process.exit(1);
+  });

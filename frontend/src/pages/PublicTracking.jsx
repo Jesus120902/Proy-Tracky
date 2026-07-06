@@ -1,11 +1,11 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { MapContainer, TileLayer, Marker, Popup, useMap, Polyline } from 'react-leaflet';
 import L from 'leaflet';
 import { Package, Truck, MapPin, Clock, Search, ArrowLeft, ChevronRight, CheckCircle2 } from 'lucide-react';
-import axios from 'axios';
+import { ordersApi } from '../services/api';
 import { StatusBadge } from '../components/Badges';
-import useSocket from '../hooks/useSocket';
+import { useDriverLocations } from '../hooks/useRealtimeDrivers';
 
 // Solución para iconos de Leaflet en React
 import markerIcon from 'leaflet/dist/images/marker-icon.png';
@@ -67,12 +67,13 @@ const PublicTracking = () => {
     setLoading(true);
     setError(null);
     try {
-      const BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:5000';
-      const { data } = await axios.get(`${BASE_URL}/api/orders/track/${number}`);
+      // Data Connect: query pública (sin auth) via trackOrderRef
+      const data = await ordersApi.trackPublic(number);
+      if (!data) throw new Error('Pedido no encontrado');
       setOrder(data);
-      setPathHistory(data.pathHistory || []);
+      setPathHistory([]); // historial GPS de RTDB
     } catch (err) {
-      setError(err.response?.data?.message || 'No se pudo encontrar el pedido');
+      setError(err.message || 'No se pudo encontrar el pedido');
       setOrder(null);
       setPathHistory([]);
     } finally {
@@ -80,63 +81,27 @@ const PublicTracking = () => {
     }
   };
 
-  // Custom Hook de Tiempo Real
-  const { on, off } = useSocket(order?.company?._id || order?.company);
+  // Firebase Realtime DB: ubicación en tiempo real del conductor
+  const companyId = order?.company?.id || order?.company?._id || order?.company;
+  useDriverLocations(companyId, useCallback((realtimeDrivers) => {
+    if (!order?.driver) return;
+    const driverId = order.driver.id || order.driver._id;
+    const rt = realtimeDrivers[driverId];
+    if (!rt) return;
+    setOrder(prev => ({
+      ...prev,
+      driver: { ...prev.driver, locationLat: rt.lat, locationLng: rt.lng }
+    }));
+    if (order.status === 'in-transit') {
+      setPathHistory(prev => {
+        const last = prev[prev.length - 1];
+        if (last && last[0] === rt.lat && last[1] === rt.lng) return prev;
+        return [...prev, [rt.lat, rt.lng]];
+      });
+    }
+  }, [order]));
 
-  useEffect(() => {
-    if (!order) return;
-
-    on('driver_location_update', (data) => {
-      if (order.driver && data.driverId === order.driver._id) {
-        setOrder(prev => {
-          // Pintar recorrido únicamente si la orden ya está "in-transit" (En Ruta)
-          if (prev && prev.status === 'in-transit') {
-            setPathHistory(pathPrev => {
-              if (pathPrev.length > 0) {
-                const last = pathPrev[pathPrev.length - 1];
-                if (last[0] === data.location.lat && last[1] === data.location.lng) {
-                  return pathPrev;
-                }
-              }
-              return [...pathPrev, [data.location.lat, data.location.lng]];
-            });
-          }
-          return {
-            ...prev,
-            driver: { ...prev.driver, location: data.location }
-          };
-        });
-      }
-    });
-
-    on('order_status_update', (data) => {
-      if (data.orderId === order._id || data.orderNumber === order.orderNumber) {
-        setOrder(prev => {
-          if (data.status === 'in-transit') {
-            // Si el conductor inicia viaje, pintar el primer punto de partida
-            if (prev && prev.driver?.location) {
-              setPathHistory([[prev.driver.location.lat, prev.driver.location.lng]]);
-            } else {
-              setPathHistory([]);
-            }
-          }
-          return { ...prev, status: data.status };
-        });
-      }
-    });
-
-    on('driver_arrived', (data) => {
-      if (data.orderNumber === order.orderNumber || data.orderId === order._id) {
-        setArrivedAlert(`El repartidor se encuentra a menos de ${data.distance} metros de tu ubicación.`);
-      }
-    });
-
-    return () => {
-      off('driver_location_update');
-      off('order_status_update');
-      off('driver_arrived');
-    };
-  }, [order, on, off]);
+  // El hook useDriverLocations en tiempo real maneja la actualización del conductor y de la orden.
 
   const handleSearch = (e) => {
     e.preventDefault();

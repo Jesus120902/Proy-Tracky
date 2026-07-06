@@ -1,7 +1,7 @@
 const express = require('express');
 const router = express.Router();
-const User = require('../models/User');
-const Company = require('../models/Company');
+const { Op } = require('sequelize');
+const { User, Company } = require('../models/associations');
 const { generateToken, generateRefreshToken } = require('../utils/generateToken');
 
 // @desc    Register a new company and admin user from the Landing Page
@@ -16,65 +16,75 @@ router.post('/register', async (req, res, next) => {
   }
 
   try {
-    // Check if email already exists
-    const userExists = await User.findOne({ email: email.toLowerCase().trim() });
+    // Verificar si el email ya existe
+    const userExists = await User.findOne({
+      where: { email: email.toLowerCase().trim() },
+    });
     if (userExists) {
       res.status(400);
       return next(new Error('El correo ya está registrado'));
     }
 
-    // Generate a slug for the company
+    // Generar slug para la empresa
     const slug = companyName
       .toLowerCase()
       .replace(/[^a-z0-9]+/g, '-')
       .replace(/(^-|-$)+/g, '');
-    
-    const companyExists = await Company.findOne({ slug });
+
+    const companyExists = await Company.findOne({ where: { slug } });
     if (companyExists) {
       res.status(400);
       return next(new Error('Ya existe una empresa con un nombre similar, por favor elige otro.'));
     }
 
-    // Calculate 30 days from now for trial
+    // Calcular 30 días de trial
     const startDate = new Date();
     const endDate = new Date();
     endDate.setDate(endDate.getDate() + 30);
 
-    // Create the Company with Free trial
+    // Crear la empresa con trial gratuito
     const company = await Company.create({
       name: companyName,
       slug,
-      subscription: {
-        plan: 'free',
-        status: 'trialing',
-        startDate,
-        endDate
-      }
+      subscriptionPlan: 'free',
+      subscriptionStatus: 'trialing',
+      subscriptionStartDate: startDate,
+      subscriptionEndDate: endDate,
     });
 
-    // Create the User (Admin)
+    // Crear usuario Admin (el hook beforeCreate hashea el password)
     const user = await User.create({
       name,
       email: email.toLowerCase().trim(),
-      password, // Pre-save hook will hash this
+      password,
       role: 'admin',
-      company: company._id,
-      // Phone could be stored if we add it to the schema, but not in current schema.
+      companyId: company.id,
     });
 
-    const accessToken = generateToken(user._id);
-    const refreshToken = generateRefreshToken(user._id);
+    const accessToken = generateToken(user.id);
+    const refreshToken = generateRefreshToken(user.id);
 
     res.status(201).json({
-      _id: user._id,
+      _id: user.id,
       name: user.name,
       email: user.email,
       role: user.role,
       company: {
-        _id: company._id,
+        _id: company.id,
         name: company.name,
         slug: company.slug,
-        subscription: company.subscription
+        logoUrl: company.logoUrl,
+        branding: {
+          primaryColor: company.brandingPrimaryColor,
+          secondaryColor: company.brandingSecondaryColor,
+        },
+        settings: { maxDrivers: company.maxDrivers },
+        subscription: {
+          plan: company.subscriptionPlan,
+          status: company.subscriptionStatus,
+          startDate: company.subscriptionStartDate,
+          endDate: company.subscriptionEndDate,
+        },
       },
       token: accessToken,
       refreshToken,

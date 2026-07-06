@@ -1,49 +1,75 @@
-const mongoose = require('mongoose');
+const { DataTypes } = require('sequelize');
 const bcrypt = require('bcryptjs');
+const sequelize = require('../db');
 
-const userSchema = new mongoose.Schema({
+const User = sequelize.define('User', {
+  id: {
+    type: DataTypes.UUID,
+    defaultValue: DataTypes.UUIDV4,
+    primaryKey: true,
+  },
   name: {
-    type: String,
-    required: true,
+    type: DataTypes.STRING,
+    allowNull: false,
   },
   email: {
-    type: String,
-    required: true,
+    type: DataTypes.STRING,
+    allowNull: false,
     unique: true,
-    lowercase: true,
+    set(value) {
+      this.setDataValue('email', value.toLowerCase().trim());
+    },
   },
   password: {
-    type: String,
-    required: true,
-    select: false, // No devolver el password por defecto por seguridad
+    type: DataTypes.STRING,
+    allowNull: false,
   },
   role: {
-    type: String,
-    enum: ['superadmin', 'admin', 'operator', 'driver'],
-    default: 'admin',
+    type: DataTypes.ENUM('superadmin', 'admin', 'operator', 'driver'),
+    defaultValue: 'admin',
   },
-  company: {
-    type: mongoose.Schema.Types.ObjectId,
-    ref: 'Company',
-    required: function() { return this.role !== 'superadmin'; }
+  companyId: {
+    type: DataTypes.UUID,
+    allowNull: true,
+    field: 'company_id',
+    references: { model: 'companies', key: 'id' },
   },
   active: {
-    type: Boolean,
-    default: true,
-  }
-}, { timestamps: true });
-
-// Encriptar password antes de guardar
-userSchema.pre('save', async function(next) {
-  if (!this.isModified('password')) return next();
-  const salt = await bcrypt.genSalt(10);
-  this.password = await bcrypt.hash(this.password, salt);
-  next();
+    type: DataTypes.BOOLEAN,
+    defaultValue: true,
+  },
+}, {
+  tableName: 'users',
+  underscored: true,
+  timestamps: true,
+  defaultScope: {
+    attributes: { exclude: ['password'] },
+  },
+  scopes: {
+    withPassword: {
+      attributes: { include: ['password'] },
+    },
+  },
 });
 
-// Método para comparar passwords
-userSchema.methods.matchPassword = async function(enteredPassword) {
+// Hook: hashear contraseña antes de crear/actualizar
+User.addHook('beforeCreate', async (user) => {
+  if (user.password) {
+    const salt = await bcrypt.genSalt(10);
+    user.password = await bcrypt.hash(user.password, salt);
+  }
+});
+
+User.addHook('beforeUpdate', async (user) => {
+  if (user.changed('password')) {
+    const salt = await bcrypt.genSalt(10);
+    user.password = await bcrypt.hash(user.password, salt);
+  }
+});
+
+// Método de instancia: comparar contraseñas
+User.prototype.matchPassword = async function (enteredPassword) {
   return await bcrypt.compare(enteredPassword, this.password);
 };
 
-module.exports = mongoose.model('User', userSchema);
+module.exports = User;

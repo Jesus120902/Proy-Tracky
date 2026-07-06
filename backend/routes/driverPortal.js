@@ -1,31 +1,75 @@
 const express = require('express');
 const router = express.Router();
-const Order = require('../models/Order');
-const Driver = require('../models/Driver');
+const { Op } = require('sequelize');
+const { Order, Driver, LocationHistory } = require('../models/associations');
 const { protect } = require('../middleware/authMiddleware');
 
 // Proteger todas las rutas del portal del conductor
 router.use(protect);
 
+// Helper: serializar orden al formato frontend
+const serializeOrder = (order) => ({
+  _id: order.id,
+  orderNumber: order.orderNumber,
+  company: order.companyId,
+  driver: order.driverId,
+  customer: {
+    name: order.customerName,
+    address: order.customerAddress,
+    phone: order.customerPhone,
+    coordinates: { lat: order.customerLat, lng: order.customerLng },
+  },
+  status: order.status,
+  priority: order.priority,
+  items: order.items,
+  notes: order.notes,
+  estimatedDelivery: order.estimatedDelivery,
+  assignedAt: order.assignedAt,
+  transitStartedAt: order.transitStartedAt,
+  deliveredAt: order.deliveredAt,
+  evidence: {
+    signature: order.evidenceSignature,
+    photo: order.evidencePhoto,
+    recipientName: order.evidenceRecipientName,
+    deliveredLocation: {
+      lat: order.evidenceDeliveredLat,
+      lng: order.evidenceDeliveredLng,
+    },
+  },
+  createdAt: order.createdAt,
+  updatedAt: order.updatedAt,
+});
+
 // @desc    Get orders assigned to the logged-in driver
 // @route   GET /api/driver/my-orders
 router.get('/my-orders', async (req, res, next) => {
   try {
-    // Buscar el perfil de conductor vinculado al usuario
-    const driver = await Driver.findOne({ user: req.user._id });
+    const driver = await Driver.findOne({ where: { userId: req.user.id } });
     if (!driver) {
       res.status(404);
       throw new Error('No se encontró perfil de conductor para este usuario');
     }
 
-    const orders = await Order.find({ 
-      driver: driver._id,
-      status: { $in: ['assigned', 'in-transit', 'delivered'] }
-    }).sort({ updatedAt: -1 });
+    const orders = await Order.findAll({
+      where: {
+        driverId: driver.id,
+        status: { [Op.in]: ['assigned', 'in-transit', 'delivered'] },
+      },
+      order: [['updatedAt', 'DESC']],
+    });
 
     res.json({
-      driver,
-      orders
+      driver: {
+        _id: driver.id,
+        name: driver.name,
+        email: driver.email,
+        status: driver.status,
+        vehicle: { type: driver.vehicleType, plate: driver.vehiclePlate },
+        location: { lat: driver.locationLat, lng: driver.locationLng },
+        rating: driver.rating,
+        avatar: driver.avatar,
+      },
+      orders: orders.map(serializeOrder),
     });
   } catch (err) {
     next(err);
@@ -37,32 +81,36 @@ router.get('/my-orders', async (req, res, next) => {
 router.patch('/orders/:id/status', async (req, res, next) => {
   try {
     const { status, location } = req.body;
-    const driver = await Driver.findOne({ user: req.user._id });
+    const driver = await Driver.findOne({ where: { userId: req.user.id } });
 
     if (!driver) {
       res.status(404);
       throw new Error('Perfil de conductor no encontrado');
     }
 
-    const order = await Order.findOne({ _id: req.params.id, driver: driver._id });
+    const order = await Order.findOne({ where: { id: req.params.id, driverId: driver.id } });
     if (!order) {
       res.status(404);
       throw new Error('Orden no encontrada o no asignada a usted');
     }
 
-    // Actualizar estado de la orden
-    order.status = status;
+    const orderUpdate = { status };
+    const driverUpdate = {};
+
     if (status === 'in-transit') {
-      order.transitStartedAt = new Date();
+      orderUpdate.transitStartedAt = new Date();
+      driverUpdate.status = 'on-delivery';
     }
+
     if (status === 'delivered') {
-      order.deliveredAt = new Date();
+      orderUpdate.deliveredAt = new Date();
+      driverUpdate.status = 'available';
+
       if (req.body.evidence) {
         const { uploadBase64Image } = require('../utils/storageAdapter');
-        
         let signatureUrl = '';
         let photoUrl = '';
-        
+
         try {
           if (req.body.evidence.signature) {
             signatureUrl = await uploadBase64Image(req.body.evidence.signature, 'sig');
@@ -74,43 +122,41 @@ router.patch('/orders/:id/status', async (req, res, next) => {
           console.error('Error al procesar subida de evidencia:', uploadErr.message);
         }
 
-        order.evidence = {
-          recipientName: req.body.evidence.recipientName,
-          signature: signatureUrl || req.body.evidence.signature,
-          photo: photoUrl || req.body.evidence.photo,
-          deliveredLocation: location || driver.location
-        };
+        orderUpdate.evidenceRecipientName = req.body.evidence.recipientName || null;
+        orderUpdate.evidenceSignature = signatureUrl || req.body.evidence.signature || null;
+        orderUpdate.evidencePhoto = photoUrl || req.body.evidence.photo || null;
+        orderUpdate.evidenceDeliveredLat = location?.lat || driver.locationLat;
+        orderUpdate.evidenceDeliveredLng = location?.lng || driver.locationLng;
       }
-      // Liberar conductor
-      driver.status = 'available';
-    } else if (status === 'in-transit') {
-      driver.status = 'on-delivery';
-    }
-    
-    // Actualizar ubicación del conductor si se proporciona
-    if (location && location.lat && location.lng) {
-      driver.location = location;
     }
 
-    await Promise.all([order.save(), driver.save()]);
+    if (location?.lat && location?.lng) {
+      driverUpdate.locationLat = location.lat;
+      driverUpdate.locationLng = location.lng;
+    }
 
-    // Emitir via Socket.io para que el Admin y el Cliente vean el cambio real
+    await Promise.all([
+      order.update(orderUpdate),
+      Object.keys(driverUpdate).length > 0 ? driver.update(driverUpdate) : Promise.resolve(),
+    ]);
+
+    // Emitir via Socket.io
     if (req.io) {
-      const companyRoom = order.company.toString();
+      const companyRoom = order.companyId.toString();
       req.io.to(companyRoom).emit('order_status_update', {
-        orderId: order._id,
-        status: order.status
+        orderId: order.id,
+        status: order.status,
       });
-      
+
       if (location) {
         req.io.to(companyRoom).emit('driver_location_update', {
-          driverId: driver._id,
-          location: driver.location
+          driverId: driver.id,
+          location: { lat: driverUpdate.locationLat || driver.locationLat, lng: driverUpdate.locationLng || driver.locationLng },
         });
       }
     }
 
-    res.json({ message: `Estado actualizado a ${status}`, order });
+    res.json({ message: `Estado actualizado a ${status}`, order: serializeOrder(order) });
   } catch (err) {
     next(err);
   }
@@ -120,22 +166,24 @@ router.patch('/orders/:id/status', async (req, res, next) => {
 // @route   POST /api/driver/optimize-route
 router.post('/optimize-route', async (req, res, next) => {
   try {
-    const driver = await Driver.findOne({ user: req.user._id });
+    const driver = await Driver.findOne({ where: { userId: req.user.id } });
     if (!driver) {
       res.status(404);
       throw new Error('Perfil de conductor no encontrado');
     }
 
-    const orders = await Order.find({
-      driver: driver._id,
-      status: { $in: ['assigned', 'in-transit'] }
+    const orders = await Order.findAll({
+      where: {
+        driverId: driver.id,
+        status: { [Op.in]: ['assigned', 'in-transit'] },
+      },
     });
 
     if (orders.length < 2) {
-      return res.json({ message: 'No hay suficientes órdenes activas para optimizar.', orders });
+      return res.json({ message: 'No hay suficientes órdenes activas para optimizar.', orders: orders.map(serializeOrder) });
     }
 
-    // Algoritmo de Distancia Haversine (Vecino más cercano)
+    // Algoritmo Nearest-Neighbor (Haversine)
     const haversineKm = (lat1, lng1, lat2, lng2) => {
       const R = 6371;
       const dLat = ((lat2 - lat1) * Math.PI) / 180;
@@ -148,68 +196,40 @@ router.post('/optimize-route', async (req, res, next) => {
       return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
     };
 
-    let currentNode = {
-      lat: driver.location.lat || -12.0464,
-      lng: driver.location.lng || -77.0428
-    };
+    let currentNode = { lat: driver.locationLat || -12.0464, lng: driver.locationLng || -77.0428 };
 
-    const remainingOrders = [...orders];
+    const unlocatable = orders.filter((o) => !o.customerLat || !o.customerLng);
+    const locatable = orders.filter((o) => o.customerLat && o.customerLng);
+
     const sortedOrders = [];
+    let remaining = [...locatable];
 
-    // Separar órdenes no localizables
-    const unlocatableOrders = remainingOrders.filter(o => 
-      !o.customer?.coordinates?.lat || !o.customer?.coordinates?.lng
-    );
-    const locatableOrders = remainingOrders.filter(o => 
-      o.customer?.coordinates?.lat && o.customer?.coordinates?.lng
-    );
-
-    // Resolver vecindades más cercanas
-    let currentLocatable = [...locatableOrders];
-    while (currentLocatable.length > 0) {
+    while (remaining.length > 0) {
       let nearestIdx = -1;
-      let minDistance = Infinity;
-
-      for (let i = 0; i < currentLocatable.length; i++) {
-        const order = currentLocatable[i];
-        const dist = haversineKm(
-          currentNode.lat,
-          currentNode.lng,
-          order.customer.coordinates.lat,
-          order.customer.coordinates.lng
-        );
-
-        if (dist < minDistance) {
-          minDistance = dist;
-          nearestIdx = i;
-        }
+      let minDist = Infinity;
+      for (let i = 0; i < remaining.length; i++) {
+        const dist = haversineKm(currentNode.lat, currentNode.lng, remaining[i].customerLat, remaining[i].customerLng);
+        if (dist < minDist) { minDist = dist; nearestIdx = i; }
       }
-
-      const nextOrder = currentLocatable.splice(nearestIdx, 1)[0];
-      sortedOrders.push(nextOrder);
-      currentNode = {
-        lat: nextOrder.customer.coordinates.lat,
-        lng: nextOrder.customer.coordinates.lng
-      };
+      const next = remaining.splice(nearestIdx, 1)[0];
+      sortedOrders.push(next);
+      currentNode = { lat: next.customerLat, lng: next.customerLng };
     }
 
-    const finalSequence = [...sortedOrders, ...unlocatableOrders];
+    const finalSequence = [...sortedOrders, ...unlocatable];
 
-    // Reordenar en BD mediante desfase de updatedAt (sort -1)
+    // Reordenar via updatedAt (truco de orden visual)
     const baseTime = Date.now();
     for (let i = 0; i < finalSequence.length; i++) {
-      const order = finalSequence[i];
-      order.updatedAt = new Date(baseTime - i * 1000);
-      await order.save();
+      await finalSequence[i].update({ updatedAt: new Date(baseTime - i * 1000) });
     }
 
-    // Logs de auditoría
     const logger = require('../utils/logger');
     logger.info(`🗺️ Ruta optimizada para Driver ${driver.name} (${finalSequence.length} pedidos)`);
 
     res.json({
       message: 'Ruta optimizada con éxito mediante algoritmo Nearest-Neighbor',
-      orders: finalSequence
+      orders: finalSequence.map(serializeOrder),
     });
   } catch (err) {
     next(err);

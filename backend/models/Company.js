@@ -1,40 +1,105 @@
-const mongoose = require('mongoose');
+const { DataTypes } = require('sequelize');
+const sequelize = require('../db');
 
-const companySchema = new mongoose.Schema({
+const Company = sequelize.define('Company', {
+  id: {
+    type: DataTypes.UUID,
+    defaultValue: DataTypes.UUIDV4,
+    primaryKey: true,
+  },
   name: {
-    type: String,
-    required: true,
-    trim: true,
+    type: DataTypes.STRING,
+    allowNull: false,
   },
   slug: {
-    type: String,
-    required: true,
+    type: DataTypes.STRING,
+    allowNull: false,
     unique: true,
-    lowercase: true,
   },
   logoUrl: {
-    type: String,
-    default: '',
+    type: DataTypes.TEXT,
+    defaultValue: '',
+    field: 'logo_url',
   },
-  branding: {
-    primaryColor: { type: String, default: '#3b82f6' }, // Azul Tracky por defecto
-    secondaryColor: { type: String, default: '#0f172a' },
+  brandingPrimaryColor: {
+    type: DataTypes.STRING,
+    defaultValue: '#3b82f6',
+    field: 'branding_primary_color',
   },
-  settings: {
-    maxDrivers: { type: Number, default: 10 },
+  brandingSecondaryColor: {
+    type: DataTypes.STRING,
+    defaultValue: '#0f172a',
+    field: 'branding_secondary_color',
   },
-  subscription: {
-    plan: { type: String, enum: ['free', 'pro', 'business'], default: 'free' },
-    status: { type: String, enum: ['active', 'canceled', 'past_due', 'trialing'], default: 'trialing' },
-    startDate: { type: Date, default: Date.now },
-    endDate: { type: Date },
-    mpSubscriptionId: { type: String, default: null },
-    mpCustomerId: { type: String, default: null }
+  maxDrivers: {
+    type: DataTypes.INTEGER,
+    defaultValue: 10,
+    field: 'max_drivers',
+  },
+  subscriptionPlan: {
+    type: DataTypes.ENUM('free', 'pro', 'business'),
+    defaultValue: 'free',
+    field: 'subscription_plan',
+  },
+  subscriptionStatus: {
+    type: DataTypes.ENUM('active', 'canceled', 'past_due', 'trialing'),
+    defaultValue: 'trialing',
+    field: 'subscription_status',
+  },
+  subscriptionStartDate: {
+    type: DataTypes.DATE,
+    defaultValue: DataTypes.NOW,
+    field: 'subscription_start_date',
+  },
+  subscriptionEndDate: {
+    type: DataTypes.DATE,
+    allowNull: true,
+    field: 'subscription_end_date',
+  },
+  mpSubscriptionId: {
+    type: DataTypes.STRING,
+    allowNull: true,
+    field: 'mp_subscription_id',
+  },
+  mpCustomerId: {
+    type: DataTypes.STRING,
+    allowNull: true,
+    field: 'mp_customer_id',
   },
   active: {
-    type: Boolean,
-    default: true,
-  }
-}, { timestamps: true });
+    type: DataTypes.BOOLEAN,
+    defaultValue: true,
+  },
+}, {
+  tableName: 'companies',
+  underscored: true,
+  timestamps: true,
+});
 
-module.exports = mongoose.model('Company', companySchema);
+// Helper para serializar como el frontend espera
+Company.prototype.toClientJSON = function () {
+  return {
+    _id: this.id,
+    name: this.name,
+    slug: this.slug,
+    logoUrl: this.logoUrl,
+    branding: {
+      primaryColor: this.brandingPrimaryColor,
+      secondaryColor: this.brandingSecondaryColor,
+    },
+    settings: { maxDrivers: this.maxDrivers },
+    subscription: {
+      plan: this.subscriptionPlan,
+      status: this.subscriptionStatus,
+      startDate: this.subscriptionStartDate,
+      endDate: this.subscriptionEndDate,
+      mpSubscriptionId: this.mpSubscriptionId,
+      mpCustomerId: this.mpCustomerId,
+    },
+    active: this.active,
+    createdAt: this.createdAt,
+    updatedAt: this.updatedAt,
+  };
+};
+
+module.exports = Company;

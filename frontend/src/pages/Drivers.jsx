@@ -50,7 +50,7 @@ const DriverCard = ({ driver, onEdit, onDelete }) => {
                  <Edit2 size={16} /> Editar Perfil
                </button>
                <button 
-                 onClick={() => { onDelete(driver._id); setShowMenu(false); }}
+                 onClick={() => { onDelete(driver.id || driver._id); setShowMenu(false); }}
                  className="w-full flex items-center gap-3 px-4 py-3 text-sm font-bold text-red-600 hover:bg-red-50 transition-all text-left border-t border-secondary-50"
                >
                  <Trash2 size={16} /> Eliminar
@@ -65,7 +65,7 @@ const DriverCard = ({ driver, onEdit, onDelete }) => {
           <p className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-1">Vehículo</p>
           <div className="flex items-center gap-2 text-slate-700">
             <Truck size={14} className="text-primary-500" />
-            <span className="text-xs font-bold">{driver.vehicle.plate}</span>
+            <span className="text-xs font-bold">{driver.vehiclePlate || 'Sin placa'}</span>
           </div>
         </div>
         <div className="bg-slate-50 p-3 rounded-2xl border border-transparent">
@@ -83,7 +83,7 @@ const DriverCard = ({ driver, onEdit, onDelete }) => {
             <p className="text-[10px] font-bold uppercase tracking-tight">Última Coordenada</p>
          </div>
          <p className="text-[10px] text-slate-600 font-bold pl-6 font-mono">
-            LAT: {driver.location.lat.toFixed(6)} | LNG: {driver.location.lng.toFixed(6)}
+            LAT: {(driver.locationLat || 0).toFixed(6)} | LNG: {(driver.locationLng || 0).toFixed(6)}
          </p>
       </div>
 
@@ -96,7 +96,7 @@ const DriverCard = ({ driver, onEdit, onDelete }) => {
   );
 };
 
-const Drivers = () => {
+const Drivers = ({ user }) => {
   const [drivers, setDrivers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
@@ -123,8 +123,9 @@ const Drivers = () => {
   const fetchDrivers = async () => {
     try {
       setLoading(true);
-      const res = await driversApi.getAll();
-      setDrivers(res.data);
+      const companyId = user.company?.id || user.company?._id || user.company;
+      const res = await driversApi.getAll(companyId);
+      setDrivers(res.data || res);
     } catch (error) {
       addToast(error.friendlyMessage || "Error cargando conductores", 'error');
     } finally {
@@ -147,12 +148,12 @@ const Drivers = () => {
       };
 
       if (editingDriver) {
-        const res = await driversApi.update(editingDriver._id, payload);
-        setDrivers(drivers.map(d => d._id === editingDriver._id ? res.data : d));
+        const res = await driversApi.update(editingDriver.id || editingDriver._id, payload);
+        setDrivers(drivers.map(d => (d.id || d._id) === (editingDriver.id || editingDriver._id) ? { ...d, ...payload } : d));
         setEditingDriver(null);
       } else {
         const res = await driversApi.create(payload);
-        setDrivers([res.data, ...drivers]);
+        setDrivers([{ id: res.data.id, ...payload }, ...drivers]);
         setIsModalOpen(false);
       }
       resetForm();
@@ -193,7 +194,7 @@ const Drivers = () => {
 
   const filteredDrivers = drivers.filter(d => 
     d.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    d.vehicle.plate.toLowerCase().includes(searchTerm.toLowerCase())
+    (d.vehiclePlate || '').toLowerCase().includes(searchTerm.toLowerCase())
   );
 
   return (

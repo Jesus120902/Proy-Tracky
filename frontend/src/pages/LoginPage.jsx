@@ -4,8 +4,8 @@ import { authApi } from '../services/api';
 import { useToast } from '../components/Toast';
 
 const LoginPage = ({ onLogin }) => {
-  const [email, setEmail] = useState('demo@empresa.com');
-  const [password, setPassword] = useState('demo123');
+  const [email, setEmail] = useState('admin@tracky.com');
+  const [password, setPassword] = useState('admin1234');
   const [loading, setLoading] = useState(false);
   const { addToast } = useToast();
 
@@ -13,11 +13,21 @@ const LoginPage = ({ onLogin }) => {
     e.preventDefault();
     setLoading(true);
     try {
-      const { data } = await authApi.login({ email, password });
+      // Firebase Auth: signInWithEmailAndPassword + carga de perfil Data Connect
+      const data = await authApi.login({ email, password });
       onLogin(data);
       addToast(`Bienvenido de nuevo, ${data.name}`, 'success');
     } catch (error) {
-      addToast(error.friendlyMessage || "Error al iniciar sesión", 'error');
+      // Firebase Auth lanza códigos específicos
+      let msg = 'Error al iniciar sesión';
+      if (error.code === 'auth/user-not-found' || error.code === 'auth/wrong-password' || error.code === 'auth/invalid-credential') {
+        msg = 'Email o contraseña incorrectos';
+      } else if (error.code === 'auth/too-many-requests') {
+        msg = 'Demasiados intentos. Intenta en unos minutos.';
+      } else if (error.message) {
+        msg = error.message;
+      }
+      addToast(msg, 'error');
     } finally {
       setLoading(false);
     }
@@ -79,7 +89,13 @@ const LoginPage = ({ onLogin }) => {
                 <input type="checkbox" className="rounded border-white/20 bg-white/5 text-primary-600 focus:ring-0" />
                 <span className="text-[10px] font-black uppercase text-secondary-400">Recordarme</span>
               </label>
-              <a href="#" className="text-[10px] text-primary-400 hover:text-primary-300 font-black uppercase tracking-tighter">¿Problemas de acceso?</a>
+              <button
+                type="button"
+                onClick={() => email && authApi.forgotPassword(email).then(() => alert('Revisa tu correo')).catch(console.error)}
+                className="text-[10px] text-primary-400 hover:text-primary-300 font-black uppercase tracking-tighter"
+              >
+                ¿Olvidaste tu contraseña?
+              </button>
             </div>
 
             <button 

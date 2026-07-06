@@ -1,0 +1,16 @@
+rules_version = '2';
+service firebase.storage {
+  match /b/{bucket}/o {
+    // Evidencias de entrega: solo el conductor autenticado puede subir
+    match /evidence/{companyId}/{driverId}/{filename} {
+      allow read: if request.auth != null;
+      allow write: if request.auth != null && request.auth.uid == driverId;
+    }
+
+    // Logos de empresa: admins pueden subir
+    match /logos/{companyId}/{filename} {
+      allow read: if true;
+      allow write: if request.auth != null;
+    }
+  }
+}

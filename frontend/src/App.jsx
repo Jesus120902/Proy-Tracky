@@ -16,41 +16,68 @@ import LandingPage from './pages/LandingPage';
 import RegisterPage from './pages/RegisterPage';
 import ClientPortal from './pages/ClientPortal';
 import { ToastProvider, useToast } from './components/Toast';
-import { clearSession } from './services/api';
+import { auth } from './firebase';
+import { onAuthStateChanged } from 'firebase/auth';
+import { authApi, getMyProfile } from './services/api';
 
 const AppContent = () => {
-  const [userInfo, setUserInfo] = useState(() => {
-    try {
-      const stored = localStorage.getItem('userInfo');
-      return stored ? JSON.parse(stored) : null;
-    } catch {
-      return null;
-    }
-  });
-
+  const [userInfo, setUserInfo] = useState(undefined); // undefined = cargando, null = no autenticado
   const { addToast } = useToast();
 
+  useEffect(() => {
+    // Escuchar cambios de sesión Firebase Auth
+    const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
+      if (firebaseUser) {
+        try {
+          // Cargar perfil completo desde Data Connect
+          const profile = await getMyProfile();
+          setUserInfo({
+            _id: profile.id,
+            uid: firebaseUser.uid,
+            name: profile.name,
+            email: profile.email,
+            role: profile.role,
+            company: profile.company,
+            driverId: profile.driverProfile?.id || null,
+          });
+        } catch (err) {
+          console.error('Error cargando perfil:', err);
+          // Si hay sesión Firebase pero no hay perfil en Data Connect,
+          // podría ser un usuario recién registrado — cerrar sesión
+          await auth.signOut();
+          setUserInfo(null);
+          addToast('Error al cargar tu perfil. Intenta nuevamente.', 'error');
+        }
+      } else {
+        setUserInfo(null);
+      }
+    });
+
+    return () => unsubscribe();
+  }, []);
+
   const loginHandler = (data) => {
-    localStorage.setItem('userInfo', JSON.stringify(data));
     setUserInfo(data);
   };
 
-  const logoutHandler = () => {
-    clearSession();
+  const logoutHandler = async () => {
+    await authApi.logout();
     setUserInfo(null);
   };
 
-  // Escuchar logout forzado por JWT expirado / inválido
-  useEffect(() => {
-    const handleForcedLogout = () => {
-      clearSession();
-      setUserInfo(null);
-      addToast('Sesión expirada. Por favor inicia sesión nuevamente.', 'error');
-    };
-
-    window.addEventListener('tracky:logout', handleForcedLogout);
-    return () => window.removeEventListener('tracky:logout', handleForcedLogout);
-  }, [addToast]);
+  // Pantalla de carga mientras Firebase verifica la sesión
+  if (userInfo === undefined) {
+    return (
+      <div className="min-h-screen bg-secondary-950 flex items-center justify-center">
+        <div className="flex flex-col items-center gap-4">
+          <div className="w-16 h-16 border-4 border-primary-600 border-t-transparent rounded-full animate-spin" />
+          <p className="text-secondary-400 font-semibold tracking-widest text-xs uppercase">
+            Cargando Tracky...
+          </p>
+        </div>
+      </div>
+    );
+  }
 
   // ── Rutas públicas (sin sesión) ──────────────────────────────
   if (!userInfo) {
@@ -59,7 +86,7 @@ const AppContent = () => {
         <Routes>
           <Route path="/" element={<LandingPage />} />
           <Route path="/login" element={<LoginPage onLogin={loginHandler} />} />
-          <Route path="/register" element={<RegisterPage />} />
+          <Route path="/register" element={<RegisterPage onLogin={loginHandler} />} />
           <Route path="/track" element={<PublicTracking />} />
           <Route path="/track/:id" element={<PublicTracking />} />
           <Route path="*" element={<Navigate to="/" replace />} />

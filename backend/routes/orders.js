@@ -1,104 +1,161 @@
 const express = require('express');
 const router = express.Router();
-const Order = require('../models/Order');
-const Driver = require('../models/Driver');
-const { protect, authorize } = require('../middleware/authMiddleware');
+const { Op } = require('sequelize');
+const { Order, Driver } = require('../models/associations');
+const { protect } = require('../middleware/authMiddleware');
+
+// ─── Helper: serializar lista de órdenes ──────────────────────────────
+const serializeOrder = (order) => {
+  const d = order.Driver;
+  return {
+    _id: order.id,
+    orderNumber: order.orderNumber,
+    company: order.companyId,
+    driver: d
+      ? {
+          _id: d.id,
+          name: d.name,
+          status: d.status,
+          vehicle: { type: d.vehicleType, plate: d.vehiclePlate },
+          phone: d.phone || '',
+        }
+      : null,
+    customer: {
+      name: order.customerName,
+      address: order.customerAddress,
+      phone: order.customerPhone,
+      coordinates: { lat: order.customerLat, lng: order.customerLng },
+    },
+    status: order.status,
+    priority: order.priority,
+    items: order.items,
+    notes: order.notes,
+    estimatedDelivery: order.estimatedDelivery,
+    assignedAt: order.assignedAt,
+    transitStartedAt: order.transitStartedAt,
+    deliveredAt: order.deliveredAt,
+    evidence: {
+      signature: order.evidenceSignature,
+      photo: order.evidencePhoto,
+      recipientName: order.evidenceRecipientName,
+      deliveredLocation: {
+        lat: order.evidenceDeliveredLat,
+        lng: order.evidenceDeliveredLng,
+      },
+    },
+    createdAt: order.createdAt,
+    updatedAt: order.updatedAt,
+  };
+};
 
 // GET Public Tracking info (ACCESO LIBRE - SIN JWT)
 // Route: GET /api/orders/track/:orderNumber
 router.get('/track/:orderNumber', async (req, res, next) => {
   try {
-    const order = await Order.findOne({ orderNumber: req.params.orderNumber })
-      .populate('company', 'name logoUrl branding')
-      .populate('driver', 'name location status');
+    const order = await Order.findOne({
+      where: { orderNumber: req.params.orderNumber },
+      include: [{ model: Driver, as: 'Driver' }],
+    });
 
     if (!order) {
       res.status(404);
       return next(new Error('No se encontró ningún pedido con ese número'));
     }
 
-    // Buscar historial de ubicación de hoy para el conductor asignado
+    // Historial de ubicación de hoy
     let pathHistory = [];
-    if (order.driver) {
+    if (order.driverId) {
       try {
-        const LocationHistory = require('../models/LocationHistory');
-        const today = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Lima', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date());
+        const { LocationHistory } = require('../models/associations');
+        const today = new Intl.DateTimeFormat('en-CA', {
+          timeZone: 'America/Lima',
+          year: 'numeric', month: '2-digit', day: '2-digit',
+        }).format(new Date());
+
         const history = await LocationHistory.findOne({
-          driver: order.driver._id,
-          date: today
+          where: { driverId: order.driverId, date: today },
         });
+
         if (history && history.path) {
           let points = history.path;
           if (order.transitStartedAt) {
             const startTime = new Date(order.transitStartedAt).getTime();
-            points = points.filter(p => new Date(p.timestamp).getTime() >= startTime);
+            points = points.filter((p) => new Date(p.timestamp).getTime() >= startTime);
           } else if (order.status === 'in-transit') {
-            // Si por alguna razón histórica no tiene transitStartedAt pero está en tránsito, 
-            // usar el updatedAt aproximado de cuando cambió de estado
-            const startTime = new Date(order.updatedAt).getTime() - 2000; // margen de 2 segundos
-            points = points.filter(p => new Date(p.timestamp).getTime() >= startTime);
+            const startTime = new Date(order.updatedAt).getTime() - 2000;
+            points = points.filter((p) => new Date(p.timestamp).getTime() >= startTime);
           } else {
-            // Si el pedido aún no está en ruta, no mostrar recorrido previo de otros pedidos
             points = [];
           }
-          pathHistory = points.map(p => [p.lat, p.lng]);
+          pathHistory = points.map((p) => [p.lat, p.lng]);
         }
       } catch (historyErr) {
         console.error('Error al recuperar historial para tracking público:', historyErr);
       }
     }
 
-    // Retornar información para el cliente final (incluyendo cliente completo con coordenadas e historial de ruta)
+    const d = order.Driver;
     res.json({
       orderNumber: order.orderNumber,
       status: order.status,
-      customer: order.customer,
+      customer: {
+        name: order.customerName,
+        address: order.customerAddress,
+        phone: order.customerPhone,
+        coordinates: { lat: order.customerLat, lng: order.customerLng },
+      },
       items: order.items,
-      company: order.company,
-      driver: order.driver ? {
-        _id: order.driver._id,
-        name: order.driver.name,
-        location: order.driver.location,
-        status: order.driver.status
-      } : null,
+      company: order.companyId,
+      driver: d
+        ? {
+            _id: d.id,
+            name: d.name,
+            location: { lat: d.locationLat, lng: d.locationLng },
+            status: d.status,
+          }
+        : null,
       pathHistory,
-      updatedAt: order.updatedAt
+      updatedAt: order.updatedAt,
     });
   } catch (err) {
     next(err);
   }
 });
 
-// Aplicar el middleware de protección a TODAS las rutas administrativas siguientes
+// Aplicar middleware de protección a rutas administrativas
 router.use(protect);
 
 // GET all orders (filtrado por empresa, paginado y con búsqueda)
 router.get('/', async (req, res, next) => {
   try {
     const { status, search, page = 1, limit = 10 } = req.query;
-    
-    // Filtro base: si es superadmin ve todo, si no, solo su empresa
-    const filter = req.user.role === 'superadmin' ? {} : { company: req.user.company };
-    
-    if (status && status !== 'all') filter.status = status;
-    
+
+    const where = req.user.role === 'superadmin' ? {} : { companyId: req.user.company };
+
+    if (status && status !== 'all') where.status = status;
+
     if (search) {
-      filter.$or = [
-        { orderNumber: { $regex: search, $options: 'i' } },
-        { 'customer.name': { $regex: search, $options: 'i' } }
+      where[Op.or] = [
+        { orderNumber: { [Op.iLike]: `%${search}%` } },
+        { customerName: { [Op.iLike]: `%${search}%` } },
       ];
     }
 
-    const orders = await Order.find(filter)
-      .populate('driver', 'name status vehicle phone')
-      .sort({ createdAt: -1 })
-      .skip((page - 1) * limit)
-      .limit(Number(limit));
+    const { count, rows: orders } = await Order.findAndCountAll({
+      where,
+      include: [{ model: Driver, as: 'Driver' }],
+      order: [['createdAt', 'DESC']],
+      offset: (page - 1) * limit,
+      limit: Number(limit),
+    });
 
-    const total = await Order.countDocuments(filter);
-    const totalPages = Math.ceil(total / limit);
-
-    res.json({ orders, total, page: Number(page), totalPages, limit: Number(limit) });
+    res.json({
+      orders: orders.map(serializeOrder),
+      total: count,
+      page: Number(page),
+      totalPages: Math.ceil(count / limit),
+      limit: Number(limit),
+    });
   } catch (err) {
     next(err);
   }
@@ -107,13 +164,20 @@ router.get('/', async (req, res, next) => {
 // GET single order
 router.get('/:id', async (req, res, next) => {
   try {
-    // Buscar por ID y por empresa para asegurar aislamiento
-    const order = await Order.findOne({ _id: req.params.id, company: req.user.company }).populate('driver');
+    const where = { id: req.params.id };
+    if (req.user.role !== 'superadmin') where.companyId = req.user.company;
+
+    const order = await Order.findOne({
+      where,
+      include: [{ model: Driver, as: 'Driver' }],
+    });
+
     if (!order) {
       res.status(404);
       throw new Error('Orden no encontrada en su organización');
     }
-    res.json(order);
+
+    res.json(serializeOrder(order));
   } catch (err) {
     next(err);
   }
@@ -122,12 +186,27 @@ router.get('/:id', async (req, res, next) => {
 // POST create order
 router.post('/', async (req, res, next) => {
   try {
-    // Forzar que la orden pertenezca a la empresa del usuario
-    const orderData = { ...req.body, company: req.user.company };
-    const order = new Order(orderData);
-    const saved = await order.save();
-    const populated = await saved.populate('driver', 'name status vehicle phone');
-    res.status(201).json(populated);
+    const body = req.body;
+    const orderData = {
+      companyId: req.user.company,
+      customerName: body.customer?.name || body.customerName,
+      customerAddress: body.customer?.address || body.customerAddress,
+      customerPhone: body.customer?.phone || body.customerPhone || '',
+      customerLat: body.customer?.coordinates?.lat ?? body.customerLat ?? null,
+      customerLng: body.customer?.coordinates?.lng ?? body.customerLng ?? null,
+      status: body.status || 'pending',
+      priority: body.priority || 'medium',
+      items: body.items || '',
+      notes: body.notes || '',
+      estimatedDelivery: body.estimatedDelivery || null,
+    };
+
+    const order = await Order.create(orderData);
+    const populated = await Order.findByPk(order.id, {
+      include: [{ model: Driver, as: 'Driver' }],
+    });
+
+    res.status(201).json(serializeOrder(populated));
   } catch (err) {
     next(err);
   }
@@ -136,55 +215,77 @@ router.post('/', async (req, res, next) => {
 // PUT update order
 router.put('/:id', async (req, res, next) => {
   try {
-    const { driverId, ...rest } = req.body;
+    const body = req.body;
+    const { driverId } = body;
 
-    // Verificar que la orden pertenezca a la empresa
-    let order = await Order.findOne({ _id: req.params.id, company: req.user.company });
+    const where = { id: req.params.id };
+    if (req.user.role !== 'superadmin') where.companyId = req.user.company;
+
+    let order = await Order.findOne({ where });
     if (!order) {
       res.status(404);
       throw new Error('Orden no encontrada');
     }
 
-    // Gestionar asignación de conductor (dentro de la misma empresa)
+    const updateData = {};
+
+    // Mapear campos anidados del body al formato plano
+    if (body.customer) {
+      if (body.customer.name !== undefined) updateData.customerName = body.customer.name;
+      if (body.customer.address !== undefined) updateData.customerAddress = body.customer.address;
+      if (body.customer.phone !== undefined) updateData.customerPhone = body.customer.phone;
+      if (body.customer.coordinates?.lat !== undefined) updateData.customerLat = body.customer.coordinates.lat;
+      if (body.customer.coordinates?.lng !== undefined) updateData.customerLng = body.customer.coordinates.lng;
+    }
+
+    if (body.status !== undefined) updateData.status = body.status;
+    if (body.priority !== undefined) updateData.priority = body.priority;
+    if (body.items !== undefined) updateData.items = body.items;
+    if (body.notes !== undefined) updateData.notes = body.notes;
+    if (body.estimatedDelivery !== undefined) updateData.estimatedDelivery = body.estimatedDelivery;
+
+    // Asignación de conductor
     if (driverId) {
-      const driver = await Driver.findOne({ _id: driverId, company: req.user.company });
+      const driverWhere = { id: driverId };
+      if (req.user.role !== 'superadmin') driverWhere.companyId = req.user.company;
+
+      const driver = await Driver.findOne({ where: driverWhere });
       if (!driver) {
         res.status(404);
         throw new Error('Conductor no encontrado o no pertenece a su flota');
       }
-      if (driver.status !== 'available' && driverId !== order.driver?.toString()) {
+      if (driver.status !== 'available' && driverId !== order.driverId) {
         res.status(400);
         throw new Error('El conductor seleccionado no está disponible');
       }
-
-      driver.status = 'on-delivery';
-      await driver.save();
-      rest.driver = driverId;
-      if (!rest.status || rest.status === 'pending') rest.status = 'assigned';
+      await driver.update({ status: 'on-delivery' });
+      updateData.driverId = driverId;
+      if (!updateData.status || updateData.status === 'pending') updateData.status = 'assigned';
     }
 
-    if (rest.status === 'delivered') rest.deliveredAt = new Date();
+    if (updateData.status === 'delivered') updateData.deliveredAt = new Date();
+    if (updateData.status === 'in-transit') updateData.transitStartedAt = updateData.transitStartedAt || new Date();
 
-    if (rest.status === 'cancelled' && order.driver) {
-      await Driver.findByIdAndUpdate(order.driver, { status: 'available' });
+    if (updateData.status === 'cancelled' && order.driverId) {
+      await Driver.update({ status: 'available' }, { where: { id: order.driverId } });
     }
 
-    const updated = await Order.findOneAndUpdate(
-      { _id: req.params.id, company: req.user.company },
-      rest,
-      { new: true, runValidators: true }
-    ).populate('driver', 'name status vehicle phone');
+    await order.update(updateData);
 
-    // Emitir actualización de estado a la empresa y canales de rastreo
+    const updated = await Order.findByPk(order.id, {
+      include: [{ model: Driver, as: 'Driver' }],
+    });
+
+    // Emitir actualización via Socket.io
     if (req.io) {
       req.io.to(req.user.company.toString()).emit('order_status_update', {
-        orderId: updated._id,
+        orderId: updated.id,
         orderNumber: updated.orderNumber,
-        status: updated.status
+        status: updated.status,
       });
     }
 
-    res.json(updated);
+    res.json(serializeOrder(updated));
   } catch (err) {
     next(err);
   }
@@ -193,17 +294,20 @@ router.put('/:id', async (req, res, next) => {
 // DELETE order
 router.delete('/:id', async (req, res, next) => {
   try {
-    const order = await Order.findOne({ _id: req.params.id, company: req.user.company });
+    const where = { id: req.params.id };
+    if (req.user.role !== 'superadmin') where.companyId = req.user.company;
+
+    const order = await Order.findOne({ where });
     if (!order) {
       res.status(404);
       throw new Error('Orden no encontrada');
     }
 
-    if (order.driver) {
-      await Driver.findByIdAndUpdate(order.driver, { status: 'available' });
+    if (order.driverId) {
+      await Driver.update({ status: 'available' }, { where: { id: order.driverId } });
     }
 
-    await Order.deleteOne({ _id: req.params.id });
+    await order.destroy();
     res.json({ message: 'Orden eliminada satisfactoriamente' });
   } catch (err) {
     next(err);

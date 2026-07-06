@@ -16,11 +16,10 @@ import {
   Users,
   CreditCard
 } from 'lucide-react';
-import useSocket from '../hooks/useSocket';
+import { useOrderStatusUpdates } from '../hooks/useRealtimeDrivers';
 import {
   NotificationPanel,
   NotificationStyles,
-  useSocketNotifications,
 } from './NotificationCenter';
 
 // ── Sidebar item ────────────────────────────────────────────────
@@ -139,12 +138,12 @@ const Layout = ({ children, user, onLogout }) => {
     menuItems.push({ icon: ShieldAlert, label: 'Admin SaaS', path: '/companies' });
   }
 
-  // Socket.io: conectar a la sala de la empresa
-  const companyId  = user.company?._id || user.company;
-  const socketHook = useSocket(companyId);
-
-  // Convertir eventos Socket.io en notificaciones
-  useSocketNotifications(socketHook);
+  // Firebase Realtime DB: escuchar actualizaciones de órdenes para notificaciones
+  const companyId = user.company?.id || user.company?._id || user.company;
+  useOrderStatusUpdates(companyId, (event) => {
+    // Las notificaciones se muestran via Toast cuando cambian órdenes
+    console.log('📬 Orden actualizada:', event);
+  });
 
   // Branding dinámico
   const primaryColor = user.company?.branding?.primaryColor || '#3b82f6';

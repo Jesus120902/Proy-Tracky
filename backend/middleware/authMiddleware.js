@@ -1,5 +1,5 @@
 const jwt = require('jsonwebtoken');
-const User = require('../models/User');
+const { User, Company } = require('../models/associations');
 
 const JWT_SECRET = process.env.JWT_SECRET || 'tracky_fallback_dev_only';
 
@@ -32,10 +32,16 @@ const protect = async (req, res, next) => {
       return next(new Error('Token de acceso inválido'));
     }
 
-    // 3. Buscar usuario activo en BD (confirma que no fue desactivado)
-    const user = await User.findById(decoded.id)
-      .select('-password')
-      .populate('company', 'name logoUrl branding settings slug');
+    // 3. Buscar usuario activo en BD incluyendo datos de empresa
+    const user = await User.scope('defaultScope').findByPk(decoded.id, {
+      include: [
+        {
+          model: Company,
+          as: 'company',
+          attributes: ['id', 'name', 'logoUrl', 'brandingPrimaryColor', 'brandingSecondaryColor', 'maxDrivers', 'slug'],
+        },
+      ],
+    });
 
     if (!user) {
       res.status(401);
@@ -47,7 +53,31 @@ const protect = async (req, res, next) => {
       return next(new Error('Cuenta desactivada. Contacta al administrador.'));
     }
 
-    req.user = user;
+    // Normalizar para que el código de rutas use req.user.company como ID (string)
+    // y req.user.companyData para datos completos
+    req.user = {
+      _id: user.id,
+      id: user.id,
+      name: user.name,
+      email: user.email,
+      role: user.role,
+      active: user.active,
+      company: user.companyId, // ID de empresa (string UUID) — mismo comportamiento que MongoDB
+      companyData: user.company
+        ? {
+            _id: user.company.id,
+            name: user.company.name,
+            logoUrl: user.company.logoUrl,
+            branding: {
+              primaryColor: user.company.brandingPrimaryColor,
+              secondaryColor: user.company.brandingSecondaryColor,
+            },
+            settings: { maxDrivers: user.company.maxDrivers },
+            slug: user.company.slug,
+          }
+        : null,
+    };
+
     next();
   } catch (error) {
     res.status(401);

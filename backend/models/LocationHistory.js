@@ -1,31 +1,43 @@
-const mongoose = require('mongoose');
+const { DataTypes } = require('sequelize');
+const sequelize = require('../db');
 
-const locationHistorySchema = new mongoose.Schema({
-  driver: {
-    type: mongoose.Schema.Types.ObjectId,
-    ref: 'Driver',
-    required: true
+const LocationHistory = sequelize.define('LocationHistory', {
+  id: {
+    type: DataTypes.UUID,
+    defaultValue: DataTypes.UUIDV4,
+    primaryKey: true,
   },
-  company: {
-    type: mongoose.Schema.Types.ObjectId,
-    ref: 'Company',
-    required: true
+  driverId: {
+    type: DataTypes.UUID,
+    allowNull: false,
+    field: 'driver_id',
+    references: { model: 'drivers', key: 'id' },
+  },
+  companyId: {
+    type: DataTypes.UUID,
+    allowNull: false,
+    field: 'company_id',
+    references: { model: 'companies', key: 'id' },
   },
   date: {
-    type: String, // format YYYY-MM-DD for easy querying
-    required: true
+    type: DataTypes.DATEONLY, // YYYY-MM-DD
+    allowNull: false,
   },
-  path: [{
-    lat: Number,
-    lng: Number,
-    timestamp: {
-      type: Date,
-      default: Date.now
-    }
-  }]
-}, { timestamps: true });
+  path: {
+    type: DataTypes.JSONB, // Array de { lat, lng, timestamp }
+    defaultValue: [],
+  },
+}, {
+  tableName: 'location_history',
+  underscored: true,
+  timestamps: true,
+  indexes: [
+    {
+      unique: true,
+      fields: ['driver_id', 'date'],
+      name: 'location_history_driver_date_unique',
+    },
+  ],
+});
 
-// Índice para búsquedas rápidas por conductor y fecha
-locationHistorySchema.index({ driver: 1, date: 1 });
-
-module.exports = mongoose.model('LocationHistory', locationHistorySchema);
+module.exports = LocationHistory;

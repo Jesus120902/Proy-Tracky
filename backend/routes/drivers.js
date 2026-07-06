@@ -1,23 +1,38 @@
 const express = require('express');
 const router = express.Router();
-const Driver = require('../models/Driver');
-const Order = require('../models/Order');
-const LocationHistory = require('../models/LocationHistory');
-const { protect, authorize } = require('../middleware/authMiddleware');
+const { Op } = require('sequelize');
+const { Driver, Order, LocationHistory } = require('../models/associations');
+const { protect } = require('../middleware/authMiddleware');
 
 // Proteger todas las rutas de conductores
 router.use(protect);
+
+// Helper: serializar driver al formato que espera el frontend
+const serializeDriver = (driver) => ({
+  _id: driver.id,
+  name: driver.name,
+  email: driver.email,
+  user: driver.userId,
+  company: driver.companyId,
+  vehicle: { type: driver.vehicleType, plate: driver.vehiclePlate },
+  status: driver.status,
+  location: { lat: driver.locationLat, lng: driver.locationLng },
+  rating: driver.rating,
+  totalDeliveries: driver.totalDeliveries,
+  avatar: driver.avatar,
+  createdAt: driver.createdAt,
+  updatedAt: driver.updatedAt,
+});
 
 // GET all drivers (aislado por empresa)
 router.get('/', async (req, res, next) => {
   try {
     const { status } = req.query;
-    // Si es superadmin ve todo, si no, solo su empresa
-    const filter = req.user.role === 'superadmin' ? {} : { company: req.user.company };
-    if (status) filter.status = status;
+    const where = req.user.role === 'superadmin' ? {} : { companyId: req.user.company };
+    if (status) where.status = status;
 
-    const drivers = await Driver.find(filter).sort({ name: 1 });
-    res.json(drivers);
+    const drivers = await Driver.findAll({ where, order: [['name', 'ASC']] });
+    res.json(drivers.map(serializeDriver));
   } catch (err) {
     next(err);
   }
@@ -26,12 +41,15 @@ router.get('/', async (req, res, next) => {
 // GET single driver
 router.get('/:id', async (req, res, next) => {
   try {
-    const driver = await Driver.findOne({ _id: req.params.id, company: req.user.company });
+    const where = { id: req.params.id };
+    if (req.user.role !== 'superadmin') where.companyId = req.user.company;
+
+    const driver = await Driver.findOne({ where });
     if (!driver) {
       res.status(404);
       throw new Error('Conductor no encontrado');
     }
-    res.json(driver);
+    res.json(serializeDriver(driver));
   } catch (err) {
     next(err);
   }
@@ -40,10 +58,23 @@ router.get('/:id', async (req, res, next) => {
 // POST create driver
 router.post('/', async (req, res, next) => {
   try {
-    const driverData = { ...req.body, company: req.user.company };
-    const driver = new Driver(driverData);
-    const saved = await driver.save();
-    res.status(201).json(saved);
+    const body = req.body;
+    const driverData = {
+      companyId: req.user.company,
+      name: body.name,
+      email: body.email,
+      userId: body.userId || null,
+      vehicleType: body.vehicle?.type || body.vehicleType || 'Van',
+      vehiclePlate: body.vehicle?.plate || body.vehiclePlate || '',
+      status: body.status || 'available',
+      locationLat: body.location?.lat ?? -12.0464,
+      locationLng: body.location?.lng ?? -74.006,
+      rating: body.rating || 4.5,
+      avatar: body.avatar || '',
+    };
+
+    const driver = await Driver.create(driverData);
+    res.status(201).json(serializeDriver(driver));
   } catch (err) {
     next(err);
   }
@@ -52,16 +83,29 @@ router.post('/', async (req, res, next) => {
 // PUT update driver
 router.put('/:id', async (req, res, next) => {
   try {
-    const updated = await Driver.findOneAndUpdate(
-      { _id: req.params.id, company: req.user.company },
-      req.body,
-      { new: true, runValidators: true }
-    );
-    if (!updated) {
+    const where = { id: req.params.id };
+    if (req.user.role !== 'superadmin') where.companyId = req.user.company;
+
+    const driver = await Driver.findOne({ where });
+    if (!driver) {
       res.status(404);
       throw new Error('Conductor no encontrado');
     }
-    res.json(updated);
+
+    const body = req.body;
+    const updateData = {};
+    if (body.name !== undefined) updateData.name = body.name;
+    if (body.email !== undefined) updateData.email = body.email;
+    if (body.status !== undefined) updateData.status = body.status;
+    if (body.rating !== undefined) updateData.rating = body.rating;
+    if (body.avatar !== undefined) updateData.avatar = body.avatar;
+    if (body.vehicle?.type !== undefined) updateData.vehicleType = body.vehicle.type;
+    if (body.vehicle?.plate !== undefined) updateData.vehiclePlate = body.vehicle.plate;
+    if (body.location?.lat !== undefined) updateData.locationLat = body.location.lat;
+    if (body.location?.lng !== undefined) updateData.locationLng = body.location.lng;
+
+    await driver.update(updateData);
+    res.json(serializeDriver(driver));
   } catch (err) {
     next(err);
   }
@@ -71,26 +115,26 @@ router.put('/:id', async (req, res, next) => {
 router.patch('/:id/location', async (req, res, next) => {
   try {
     const { lat, lng } = req.body;
-    const updated = await Driver.findOneAndUpdate(
-      { _id: req.params.id, company: req.user.company },
-      { location: { lat, lng } },
-      { new: true }
-    );
-    if (!updated) {
+    const where = { id: req.params.id };
+    if (req.user.role !== 'superadmin') where.companyId = req.user.company;
+
+    const driver = await Driver.findOne({ where });
+    if (!driver) {
       res.status(404);
       throw new Error('Conductor no encontrado');
     }
 
-    // Retransmitir ubicación en vivo a la organización
+    await driver.update({ locationLat: lat, locationLng: lng });
+
     if (req.io) {
       req.io.to(req.user.company.toString()).emit('driver_location_update', {
-        driverId: updated._id,
-        location: updated.location,
-        name: updated.name
+        driverId: driver.id,
+        location: { lat: driver.locationLat, lng: driver.locationLng },
+        name: driver.name,
       });
     }
 
-    res.json(updated);
+    res.json(serializeDriver(driver));
   } catch (err) {
     next(err);
   }
@@ -99,43 +143,60 @@ router.patch('/:id/location', async (req, res, next) => {
 // DELETE driver
 router.delete('/:id', async (req, res, next) => {
   try {
-    const driver = await Driver.findOne({ _id: req.params.id, company: req.user.company });
+    const where = { id: req.params.id };
+    if (req.user.role !== 'superadmin') where.companyId = req.user.company;
+
+    const driver = await Driver.findOne({ where });
     if (!driver) {
       res.status(404);
       throw new Error('Conductor no encontrado');
     }
 
     // Liberar órdenes asociadas que no estén entregadas
-    await Order.updateMany(
-      { driver: req.params.id, status: { $ne: 'delivered' } },
-      { $set: { driver: null, status: 'pending' } }
+    await Order.update(
+      { driverId: null, status: 'pending' },
+      {
+        where: {
+          driverId: req.params.id,
+          status: { [Op.ne]: 'delivered' },
+        },
+      }
     );
 
-    await Driver.deleteOne({ _id: req.params.id });
+    await driver.destroy();
     res.json({ message: 'Conductor eliminado y recursos liberados' });
   } catch (err) {
     next(err);
   }
 });
 
-// @desc    Get driver location history by date
-// @route   GET /api/drivers/:id/history
+// GET driver location history by date
 router.get('/:id/history', async (req, res, next) => {
   try {
-    const { date } = req.query; // format YYYY-MM-DD
-    const queryDate = date || new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Lima', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date());
-    
-    const history = await LocationHistory.findOne({
-      driver: req.params.id,
-      date: queryDate,
-      company: req.user.company
-    });
+    const { date } = req.query;
+    const queryDate =
+      date ||
+      new Intl.DateTimeFormat('en-CA', {
+        timeZone: 'America/Lima',
+        year: 'numeric', month: '2-digit', day: '2-digit',
+      }).format(new Date());
+
+    const where = { driverId: req.params.id, date: queryDate };
+    if (req.user.role !== 'superadmin') where.companyId = req.user.company;
+
+    const history = await LocationHistory.findOne({ where });
 
     if (!history) {
       return res.json({ driver: req.params.id, date: queryDate, path: [] });
     }
 
-    res.json(history);
+    res.json({
+      _id: history.id,
+      driver: history.driverId,
+      company: history.companyId,
+      date: history.date,
+      path: history.path,
+    });
   } catch (err) {
     next(err);
   }

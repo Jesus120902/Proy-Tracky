@@ -5,7 +5,7 @@ import { Plus, Search, Filter, Edit2, Trash2, Eye, X, Check, Truck, MapPin, Pack
 import { useToast } from '../components/Toast';
 import ConfirmModal from '../components/ConfirmModal';
 
-const Orders = () => {
+const Orders = ({ user }) => {
   const [orders, setOrders] = useState([]);
   const [drivers, setDrivers] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -34,7 +34,7 @@ const Orders = () => {
   const [geocodingLoading, setGeocodingLoading] = useState(false);
 
   const handleGeocodeAddress = async () => {
-    if (!formData.address.trim()) {
+    if (!formData.customerAddress || !formData.customerAddress.trim()) {
       addToast("Por favor ingresa una dirección primero", "warning");
       return;
     }
@@ -42,7 +42,7 @@ const Orders = () => {
     try {
       const response = await fetch(
         `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(
-          formData.address
+          formData.customerAddress
         )}&limit=1`,
         {
           headers: {
@@ -55,7 +55,8 @@ const Orders = () => {
         const { lat, lon } = data[0];
         setFormData(prev => ({
           ...prev,
-          coordinates: { lat: parseFloat(lat), lng: parseFloat(lon) }
+          customerLat: parseFloat(lat),
+          customerLng: parseFloat(lon)
         }));
         addToast(`Dirección geolocalizada con éxito: ${parseFloat(lat).toFixed(5)}, ${parseFloat(lon).toFixed(5)}`, "success");
       } else {
@@ -85,16 +86,45 @@ const Orders = () => {
   const fetchData = async () => {
     try {
       setLoading(true);
-      const [oRes, dRes] = await Promise.all([
-        ordersApi.getAll({ page, limit: 10, status: statusFilter !== 'all' ? statusFilter : '', search: searchTerm }),
-        driversApi.getAll()
-      ]);
-      setOrders(oRes.data.orders);
-      setTotalPages(oRes.data.totalPages || 1);
-      setTotalOrders(oRes.data.total || 0);
-      setDrivers(dRes.data.filter(d => d.status === 'available' || d.status === 'on-delivery'));
+      
+      // Asegurar que companyId sea estrictamente una cadena de texto
+      let companyId = '';
+      if (user && user.company) {
+        if (typeof user.company === 'object') {
+          companyId = user.company.id || user.company._id || '';
+        } else {
+          companyId = user.company;
+        }
+      }
+      
+      if (!companyId) {
+        console.warn("No se pudo obtener el companyId del usuario logueado");
+        setLoading(false);
+        return;
+      }
+
+      // Cargar órdenes de forma segura
+      try {
+        const oRes = await ordersApi.getAll({ companyId, page, limit: 10, status: statusFilter !== 'all' ? statusFilter : '', search: searchTerm });
+        setOrders(oRes.data.orders || []);
+        setTotalPages(oRes.data.totalPages || 1);
+        setTotalOrders(oRes.data.total || 0);
+      } catch (oErr) {
+        console.error("Error al cargar órdenes:", oErr);
+        addToast("Error al cargar órdenes de la base de datos", "error");
+      }
+
+      // Cargar conductores de forma segura sin interrumpir la tabla de órdenes
+      try {
+        const dRes = await driversApi.getAll(companyId);
+        const driversList = dRes.data || dRes || [];
+        setDrivers(driversList.filter(d => d.status === 'available' || d.status === 'on-delivery'));
+      } catch (dErr) {
+        console.error("Error al cargar conductores para asignación:", dErr);
+      }
+
     } catch (error) {
-      addToast(error.friendlyMessage || "Error cargando la lista de órdenes", 'error');
+      console.error("Error general en fetchData:", error);
     } finally {
       setLoading(false);
     }
@@ -103,19 +133,27 @@ const Orders = () => {
   const handleCreateOrUpdateOrder = async (e) => {
     e.preventDefault();
     try {
+      const companyId = user.company?.id || user.company?._id || (typeof user.company === 'string' ? user.company : '');
+      if (!companyId) {
+        addToast("Error: No se encontró la empresa asociada al usuario", "error");
+        return;
+      }
+
       const payload = {
-        customer: {
-          name: formData.customerName,
-          address: formData.address,
-          coordinates: formData.coordinates || { lat: null, lng: null }
-        },
-        priority: formData.priority,
-        items: formData.items,
-        status: formData.status
+        companyId,
+        customerName: formData.customerName || 'Cliente sin nombre',
+        customerAddress: formData.customerAddress || 'Sin dirección',
+        customerPhone: formData.customerPhone || '',
+        customerLat: Number(formData.customerLat) || -12.046374,
+        customerLng: Number(formData.customerLng) || -77.042793,
+        priority: formData.priority || 'medium',
+        items: formData.items || '',
+        notes: formData.notes || '',
+        status: formData.status || 'pending'
       };
 
       if (editingOrder) {
-        await ordersApi.update(editingOrder._id, payload);
+        await ordersApi.update(editingOrder.id || editingOrder._id, payload);
         setEditingOrder(null);
       } else {
         await ordersApi.create(payload);
@@ -125,23 +163,36 @@ const Orders = () => {
       fetchData();
       addToast(editingOrder ? "Orden actualizada con éxito" : "Orden creada correctamente", 'success');
     } catch (error) {
-      addToast(error.friendlyMessage || "Error al procesar la solicitud", 'error');
+      addToast(error.message || "Error al procesar la solicitud", 'error');
     }
   };
 
   const resetForm = () => {
-    setFormData({ customerName: '', address: '', priority: 'medium', items: '', status: 'pending', coordinates: { lat: null, lng: null } });
+    setFormData({ 
+      customerName: '', 
+      customerAddress: '', 
+      customerPhone: '',
+      customerLat: null, 
+      customerLng: null,
+      priority: 'medium', 
+      items: '', 
+      notes: '',
+      status: 'pending' 
+    });
   };
 
   const handleEditClick = (order) => {
     setEditingOrder(order);
     setFormData({
-      customerName: order.customer.name,
-      address: order.customer.address,
+      customerName: order.customerName,
+      customerAddress: order.customerAddress,
+      customerPhone: order.customerPhone || '',
       priority: order.priority,
       items: order.items || '',
+      notes: order.notes || '',
       status: order.status,
-      coordinates: order.customer.coordinates || { lat: null, lng: null }
+      customerLat: order.customerLat,
+      customerLng: order.customerLng
     });
   };
 
@@ -251,42 +302,42 @@ const Orders = () => {
                 </tr>
               ) : (
                 orders.map(order => (
-                  <tr key={order._id} className="group hover:bg-primary-50/20 transition-all">
+                  <tr key={order.id || order._id} className="group hover:bg-primary-50/20 transition-all">
                     <td className="px-8 py-5">
                       <span className="font-black text-secondary-900 group-hover:text-primary-600 transition-colors">{order.orderNumber}</span>
                     </td>
                     <td className="px-8 py-5">
                       <div className="flex flex-col">
-                        <span className="text-sm font-bold text-secondary-900 uppercase">{order.customer.name}</span>
-                        <span className="text-xs text-secondary-400 font-medium truncate max-w-[200px]">{order.customer.address}</span>
+                        <span className="text-sm font-bold text-secondary-900 uppercase">{order.customerName || 'Cliente'}</span>
+                        <span className="text-xs text-secondary-400 font-medium truncate max-w-[200px]">{order.customerAddress || 'Sin dirección'}</span>
                       </div>
                     </td>
                     <td className="px-8 py-5 text-center">
                       <StatusBadge status={order.status === 'in-transit' ? 'in route' : order.status} />
                     </td>
                     <td className="px-8 py-5">
-                      {isAssigning === order._id ? (
+                      {isAssigning === order.id ? (
                         <select 
                           autoFocus
                           onBlur={() => setIsAssigning(null)}
-                          onChange={(e) => handleAssignDriver(order._id, e.target.value)}
+                          onChange={(e) => handleAssignDriver(order.id, e.target.value)}
                           className="bg-white border border-primary-200 text-xs rounded-xl p-2 outline-none focus:ring-4 focus:ring-primary-500/10"
                         >
                           <option value="">Seleccionar...</option>
                           {drivers.map(d => (
-                            <option key={d._id} value={d._id}>{d.name} ({d.vehicle.type})</option>
+                            <option key={d.id} value={d.id}>{d.name} ({d.vehicleType || 'Sin vehículo'})</option>
                           ))}
                         </select>
                       ) : order.driver ? (
                         <div className="flex items-center gap-2">
                            <div className="w-8 h-8 rounded-xl bg-primary-100 flex items-center justify-center text-[10px] font-black text-primary-700">
-                            {order.driver.name.charAt(0)}
+                            {(order.driver.name || 'D').charAt(0)}
                           </div>
-                          <span className="text-sm font-bold text-secondary-700">{order.driver.name}</span>
+                          <span className="text-xs font-bold text-slate-700">{order.driver.name || 'Conductor'}</span>
                         </div>
                       ) : (
                         <button 
-                          onClick={() => setIsAssigning(order._id)}
+                          onClick={() => setIsAssigning(order.id || order._id)}
                           className="flex items-center gap-2 text-[10px] font-black text-primary-600 uppercase tracking-tighter hover:bg-primary-50 px-3 py-1.5 rounded-lg transition-all"
                         >
                           <Truck size={12} />
@@ -302,8 +353,8 @@ const Orders = () => {
                         <button 
                           onClick={() => {
                             const trackingUrl = `${window.location.origin}/track/${order.orderNumber}`;
-                            const msg = `Hola ${order.customer.name}, tu pedido ${order.orderNumber} está siendo gestionado. Puedes rastrearlo aquí: ${trackingUrl}`;
-                            window.open(`https://wa.me/${order.customer.phone}?text=${encodeURIComponent(msg)}`, '_blank');
+                            const msg = `Hola ${order.customerName}, tu pedido ${order.orderNumber} está siendo gestionado. Puedes rastrearlo aquí: ${trackingUrl}`;
+                            window.open(`https://wa.me/${order.customerPhone || ''}?text=${encodeURIComponent(msg)}`, '_blank');
                           }} 
                           className="p-2.5 text-green-500 hover:bg-green-50 rounded-xl transition-all" 
                           title="Enviar por WhatsApp"
@@ -312,7 +363,7 @@ const Orders = () => {
                         </button>
                         <button onClick={() => setViewingOrder(order)} className="p-2.5 text-secondary-400 hover:text-primary-600 hover:bg-primary-50 rounded-xl transition-all" title="Ver Historial"><Eye size={18} /></button>
                         <button onClick={() => handleEditClick(order)} className="p-2.5 text-secondary-400 hover:text-blue-600 hover:bg-blue-50 rounded-xl transition-all" title="Editar"><Edit2 size={18} /></button>
-                        <button onClick={() => setOrderToDelete(order._id)} className="p-2.5 text-secondary-400 hover:text-red-600 hover:bg-red-50 rounded-xl transition-all" title="Eliminar"><Trash2 size={18} /></button>
+                        <button onClick={() => setOrderToDelete(order.id || order._id)} className="p-2.5 text-secondary-400 hover:text-red-600 hover:bg-red-50 rounded-xl transition-all" title="Eliminar"><Trash2 size={18} /></button>
                       </div>
                     </td>
                   </tr>
@@ -389,8 +440,8 @@ const Orders = () => {
                             type="tel" 
                             placeholder="Ej: 34600112233"
                             className="w-full bg-secondary-50 border-none rounded-2xl p-4 focus:ring-4 focus:ring-primary-500/10 outline-none transition-all shadow-inner"
-                            value={formData.phone || ''}
-                            onChange={(e) => setFormData({...formData, phone: e.target.value})}
+                            value={formData.customerPhone || ''}
+                            onChange={(e) => setFormData({...formData, customerPhone: e.target.value})}
                           />
                        </div>
                     </div>
@@ -398,9 +449,9 @@ const Orders = () => {
                    <div className="space-y-2">
                       <div className="flex justify-between items-center">
                         <label className="text-[10px] font-black uppercase tracking-widest text-secondary-400 ml-1">Dirección de Entrega</label>
-                        {formData.coordinates?.lat && (
+                        {formData.customerLat && (
                           <span className="text-[9px] font-bold text-green-600 bg-green-50 px-2 py-0.5 rounded-lg">
-                            📍 Localizado ({formData.coordinates.lat.toFixed(4)}, {formData.coordinates.lng.toFixed(4)})
+                            📍 Localizado ({formData.customerLat.toFixed(4)}, {formData.customerLng.toFixed(4)})
                           </span>
                         )}
                       </div>
@@ -410,8 +461,8 @@ const Orders = () => {
                           type="text" 
                           placeholder="Calle, Ciudad, País..."
                           className="flex-1 bg-secondary-50 border-none rounded-2xl p-4 focus:ring-4 focus:ring-primary-500/10 outline-none transition-all shadow-inner"
-                          value={formData.address}
-                          onChange={(e) => setFormData({...formData, address: e.target.value})}
+                          value={formData.customerAddress}
+                          onChange={(e) => setFormData({...formData, customerAddress: e.target.value})}
                         />
                         <button
                           type="button"
@@ -491,7 +542,7 @@ const Orders = () => {
                 <div className="absolute -bottom-6 left-8 right-8 bg-white rounded-2xl p-4 shadow-xl border border-secondary-50 flex items-center justify-between">
                    <StatusBadge status={viewingOrder.status === 'in-transit' ? 'in route' : viewingOrder.status} />
                    <div className="flex items-center gap-2 text-[10px] font-black text-secondary-400 uppercase tracking-widest">
-                      <Clock size={14} /> Ref 00{viewingOrder._id.slice(-4)}
+                      <Clock size={14} /> Ref 00{(viewingOrder.id || viewingOrder._id).slice(-4)}
                    </div>
                 </div>
              </div>
@@ -503,14 +554,14 @@ const Orders = () => {
                         <User size={14} />
                         <span className="text-[10px] font-black uppercase tracking-widest tracking-tighter">Cliente</span>
                       </div>
-                      <p className="font-bold text-secondary-900 uppercase text-sm">{viewingOrder.customer.name}</p>
+                      <p className="font-bold text-secondary-900 uppercase text-sm">{viewingOrder.customerName}</p>
                    </div>
                    <div className="space-y-1">
                       <div className="flex items-center gap-2 text-primary-600">
                         <MapPin size={14} />
                         <span className="text-[10px] font-black uppercase tracking-widest tracking-tighter">Destino</span>
                       </div>
-                      <p className="text-[10px] font-bold text-secondary-600 leading-tight">{viewingOrder.customer.address}</p>
+                      <p className="text-[10px] font-bold text-secondary-600 leading-tight">{viewingOrder.customerAddress}</p>
                    </div>
                 </div>
 

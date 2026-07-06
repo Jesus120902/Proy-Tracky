@@ -1,0 +1,26 @@
+{
+  "rules": {
+    "companies": {
+      "$companyId": {
+        "drivers": {
+          "$driverId": {
+            // Solo usuarios autenticados pueden leer ubicaciones de su empresa
+            ".read": "auth != null",
+            // Solo el conductor mismo puede escribir su ubicación
+            ".write": "auth != null"
+          }
+        },
+        "events": {
+          ".read": "auth != null",
+          ".write": "auth != null"
+        }
+      }
+    },
+    "subscriptionUpdates": {
+      "$companyId": {
+        ".read": "auth != null",
+        ".write": false  // Solo Cloud Functions pueden escribir aquí
+      }
+    }
+  }
+}

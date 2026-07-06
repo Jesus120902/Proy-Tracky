@@ -43,10 +43,11 @@ const Reports = ({ user }) => {
   useEffect(() => {
     const fetchData = async () => {
       try {
+        const companyId = user.company?.id || user.company?._id || user.company;
         const [sumRes, trendRes, distRes] = await Promise.all([
-          statsApi.getSummary(),
-          statsApi.getTrends(),
-          statsApi.getDistribution(),
+          statsApi.getSummary(companyId),
+          statsApi.getTrends(companyId),
+          statsApi.getDistribution(companyId),
         ]);
         setSummary(sumRes.data);
         setTrends(trendRes.data);

@@ -41,10 +41,10 @@ const Dashboard = ({ user }) => {
              });
           }
         } else {
-          // Obtener métricas logísticas normales
+          const companyId = user.company?.id || user.company?._id || user.company;
           const [ordersRes, driversRes] = await Promise.all([
-            ordersApi.getAll(),
-            driversApi.getAll()
+            ordersApi.getAll({ companyId }),
+            driversApi.getAll(companyId)
           ]);
 
           const orders = ordersRes.data.orders || [];
