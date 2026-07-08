@@ -40,6 +40,28 @@ router.get('/:id', async (req, res, next) => {
 // POST create driver
 router.post('/', async (req, res, next) => {
   try {
+    const Company = require('../models/Company');
+    const company = await Company.findById(req.user.company);
+    if (!company) {
+      res.status(404);
+      return next(new Error('Empresa no encontrada'));
+    }
+
+    const currentDriverCount = await Driver.countDocuments({ company: req.user.company });
+    const plan = company.subscription?.plan || 'free';
+    
+    let limit = 3; // free/trial default limit
+    if (plan === 'pro') {
+      limit = 15;
+    } else if (plan === 'business') {
+      limit = 100;
+    }
+
+    if (currentDriverCount >= limit) {
+      res.status(400);
+      return next(new Error(`Límite superado: Tu plan (${plan.toUpperCase()}) solo permite un máximo de ${limit} conductores. Mejora tu suscripción en el Portal del Cliente.`));
+    }
+
     const driverData = { ...req.body, company: req.user.company };
     const driver = new Driver(driverData);
     const saved = await driver.save();

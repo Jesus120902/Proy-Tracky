@@ -118,4 +118,51 @@ router.get('/plan', protect, async (req, res, next) => {
   }
 });
 
+// @desc    Simulate successful payment for local development
+// @route   POST /api/billing/simulate-success
+// @access  Private
+router.post('/simulate-success', protect, async (req, res, next) => {
+  const { plan } = req.body;
+  const user = req.user;
+
+  if (!user.company) {
+    res.status(400);
+    return next(new Error('El usuario no pertenece a una empresa'));
+  }
+
+  if (!['free', 'pro', 'business'].includes(plan)) {
+    res.status(400);
+    return next(new Error('Plan inválido'));
+  }
+
+  try {
+    const company = await Company.findById(user.company);
+    if (!company) {
+      res.status(404);
+      return next(new Error('Empresa no encontrada'));
+    }
+
+    const thirtyDaysFromNow = new Date();
+    thirtyDaysFromNow.setDate(thirtyDaysFromNow.getDate() + 30);
+
+    company.subscription = {
+      plan: plan,
+      status: plan === 'free' ? 'trialing' : 'active',
+      startDate: new Date(),
+      endDate: thirtyDaysFromNow,
+      mpSubscriptionId: 'simulated_sub_' + Math.random().toString(36).substring(7),
+      mpCustomerId: 'simulated_cust_' + Math.random().toString(36).substring(7)
+    };
+
+    await company.save();
+
+    res.json({
+      message: `Simulación exitosa. Plan ${plan.toUpperCase()} activado por 30 días.`,
+      subscription: company.subscription
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
 module.exports = router;

@@ -35,6 +35,16 @@ const ClientPortal = ({ user }) => {
     }
   };
 
+  const handleSimulate = async (planType) => {
+    try {
+      const { data } = await api.post('/billing/simulate-success', { plan: planType });
+      addToast(data.message, 'success');
+      fetchPlan();
+    } catch (error) {
+      addToast(error.response?.data?.message || 'Error al simular pago', 'error');
+    }
+  };
+
   if (loading) return <div className="p-8 text-center">Cargando portal...</div>;
 
   const isTrial = planData?.status === 'trialing';
@@ -48,6 +58,41 @@ const ClientPortal = ({ user }) => {
         <div>
           <h1 className="text-2xl font-bold text-slate-800">Portal del Cliente</h1>
           <p className="text-slate-500">Administra tu suscripción y facturación.</p>
+        </div>
+      </div>
+
+      {/* Panel de simulación de pago en local */}
+      <div className="bg-gradient-to-r from-amber-50 to-orange-50 border border-amber-200 rounded-2xl p-5 shadow-sm">
+        <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+          <div>
+            <h4 className="font-bold text-amber-800 flex items-center gap-2">
+              <Zap className="w-5 h-5 text-amber-500 fill-amber-500 animate-pulse" />
+              Simulador de Pagos (Desarrollo / Sandbox)
+            </h4>
+            <p className="text-amber-700 text-sm mt-1">
+              Prueba los límites y funcionalidades simulando los pagos directamente en la base de datos sin configuraciones complejas.
+            </p>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <button
+              onClick={() => handleSimulate('free')}
+              className="px-3 py-2 bg-white hover:bg-slate-50 text-slate-700 text-xs font-semibold rounded-xl border border-slate-200 shadow-sm transition-colors"
+            >
+              Límite Free (3 cond.)
+            </button>
+            <button
+              onClick={() => handleSimulate('pro')}
+              className="px-3 py-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold rounded-xl shadow-sm transition-colors"
+            >
+              Simular Pro (15 cond.)
+            </button>
+            <button
+              onClick={() => handleSimulate('business')}
+              className="px-3 py-2 bg-slate-900 hover:bg-slate-800 text-white text-xs font-semibold rounded-xl shadow-sm transition-colors"
+            >
+              Simular Business (100 cond.)
+            </button>
+          </div>
         </div>
       </div>
 
@@ -140,8 +185,8 @@ const ClientPortal = ({ user }) => {
               <p className="text-3xl font-black mb-4">S/79 <span className="text-sm font-normal text-slate-500">/mes</span></p>
               <ul className="space-y-2 mb-6">
                 <li className="flex gap-2"><CheckCircle2 className="w-5 h-5 text-emerald-500" /> Pedidos ilimitados</li>
-                <li className="flex gap-2"><CheckCircle2 className="w-5 h-5 text-emerald-500" /> Conductores ilimitados</li>
-                <li className="flex gap-2"><CheckCircle2 className="w-5 h-5 text-emerald-500" /> Soporte prioritario</li>
+                <li className="flex gap-2"><CheckCircle2 className="w-5 h-5 text-emerald-500" /> Hasta 15 Conductores</li>
+                <li className="flex gap-2"><CheckCircle2 className="w-5 h-5 text-emerald-500" /> Soporte estándar</li>
               </ul>
               <button 
                 onClick={() => handleUpgrade('pro')}
@@ -157,8 +202,9 @@ const ClientPortal = ({ user }) => {
               <p className="text-3xl font-black mb-4">S/149 <span className="text-sm font-normal text-slate-400">/mes</span></p>
               <ul className="space-y-2 mb-6 text-slate-300">
                 <li className="flex gap-2"><CheckCircle2 className="w-5 h-5 text-blue-400" /> Todo lo de Pro</li>
+                <li className="flex gap-2"><CheckCircle2 className="w-5 h-5 text-blue-400" /> Hasta 100 Conductores</li>
                 <li className="flex gap-2"><CheckCircle2 className="w-5 h-5 text-blue-400" /> Multi sucursal y API</li>
-                <li className="flex gap-2"><CheckCircle2 className="w-5 h-5 text-blue-400" /> Soporte 24/7</li>
+                <li className="flex gap-2"><CheckCircle2 className="w-5 h-5 text-blue-400" /> Soporte prioritario 24/7</li>
               </ul>
               <button 
                 onClick={() => handleUpgrade('business')}
